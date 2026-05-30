@@ -98,7 +98,7 @@ npm -v
 如果你拿到了 GitHub 仓库地址，克隆到本地：
 
 ```bash
-git clone <你的GitHub仓库地址>
+git clone https://github.com/N1ghts-9264/live-commerce-hub.git
 cd live-commerce-hub
 ```
 
@@ -573,7 +573,6 @@ cd server && npm install && cd ..
   3. 点击"xxx"按钮
 【期望结果】应该正常显示 xxx
 【实际结果】页面报错/白屏/数据不对，具体描述
-【截图】附上截图文件名
 【严重程度】致命 / 严重 / 一般 / 轻微
 ```
 
@@ -598,9 +597,7 @@ git checkout -b test-zhangsan
 
 #### 第 2 步：正常测试 + 改代码
 
-该改代码改代码，该截图截图。
-
-**截图保存位置：** 每个人在项目根目录下建自己的截图文件夹，命名规则 `test-screenshots-你的名字/`，把截图放里面。这个文件夹不会被 gitignore 排除，可以提交。
+发现 Bug 直接改代码修复，也可以记录在测试文档里。
 
 #### 第 3 步：提交你的修改
 
@@ -689,14 +686,6 @@ git stash
 git checkout test-你的分支名
 git stash pop
 ```
-
----
-
-## 测试截图
-
-`test_screenshots/` 文件夹中包含 25 张原开发者的系统功能测试截图。
-
-> 每个人的测试截图请放在自己的 `test-screenshots-你的名字/` 文件夹中，跟随分支一起提交。
 
 ---
 
