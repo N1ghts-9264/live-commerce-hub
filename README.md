@@ -579,11 +579,124 @@ cd server && npm install && cd ..
 
 ---
 
+## 多人协作 Git 分支工作流
+
+> 每个人在自己的分支上测试和改 Bug，互不干扰，最后合并到 main。
+
+### 每个人的操作步骤（一看就会）
+
+以下操作在项目文件夹的命令提示符里执行。
+
+#### 第 1 步：创建你自己的分支
+
+```bash
+# 以"张三"为例，分支名用拼音，不要中文
+git checkout -b test-zhangsan
+```
+
+分支命名建议：`test-你的名字拼音`
+
+#### 第 2 步：正常测试 + 改代码
+
+该改代码改代码，该截图截图。
+
+**截图保存位置：** 每个人在项目根目录下建自己的截图文件夹，命名规则 `test-screenshots-你的名字/`，把截图放里面。这个文件夹不会被 gitignore 排除，可以提交。
+
+#### 第 3 步：提交你的修改
+
+```bash
+# 查看你改了什么
+git status
+
+# 添加你的修改（把下面的路径换成你实际改的文件）
+git add .
+
+# 提交，写清楚你做了什么
+git commit -m "张三：完成商品管理模块测试，修复价格显示异常"
+
+# 推送到 GitHub
+git push -u origin test-zhangsan
+```
+
+> 第一次推送用 `git push -u origin test-zhangsan`，之后只需 `git push`。
+
+#### 第 4 步：在 GitHub 上创建 Pull Request
+
+1. 打开 https://github.com/N1ghts-9264/live-commerce-hub
+2. GitHub 顶部会出现绿色的 "Compare & pull request" 按钮，点击
+3. 写清楚你的 PR 标题和描述，例如：
+   - 标题：`张三 - 商品管理 + 主播管理模块测试`
+   - 描述：列出测试了哪些功能、发现了哪些 Bug、修复了什么
+4. 点击 "Create pull request"
+
+组长审核后合并到 main 分支即可。
+
+---
+
+### 分支管理速查
+
+| 命令 | 说明 |
+|------|------|
+| `git checkout -b test-xxx` | 创建并切换到新分支 |
+| `git checkout main` | 切回 main 分支 |
+| `git branch` | 查看本地所有分支 |
+| `git pull origin main` | 拉取 main 最新代码 |
+| `git merge main` | 把 main 的更新合并到当前分支 |
+| `git push origin test-xxx` | 推送到自己的远程分支 |
+| `git branch -d test-xxx` | 删除本地分支（合并完成后） |
+
+---
+
+### 分工对应表
+
+| 分工 | 负责模块 | 分支名 | 测试人 |
+|------|---------|--------|--------|
+| 分工 A | 登录认证 + 仪表盘 + 权限隔离 | `test-zhangsan` | 张三 |
+| 分工 B | 直播监控 + 直播场次 + 选品分析 | `test-lisi` | 李四 |
+| 分工 C | 商品管理 + 主播管理 + 脚本管理 | `test-wangwu` | 王五 |
+| 分工 D | 库存管理 + 采购管理 + 售后管理 | `test-zhaoliu` | 赵六 |
+| 分工 E | 运营报告 + 订单 API + 数据库完整性 | `test-sunqi` | 孙七 |
+
+> 表格里的名字是示例，请换成你们实际的分工和分支名。
+
+---
+
+### 常见 Git 问题
+
+**Q: 推送时报 "failed to push"**
+```bash
+# 先拉取远程更新再推
+git pull origin main
+git push origin test-你的分支名
+```
+
+**Q: 提交了不该提交的文件（如 .env）**
+```bash
+# 从 Git 追踪中移除（不删除文件）
+git rm --cached server/.env
+git commit -m "移除敏感文件"
+```
+
+**Q: 写错了 commit 信息（还没 push）**
+```bash
+git commit --amend -m "新的 commit 信息"
+```
+
+**Q: 不小心在 main 分支上改了代码**
+```bash
+# 把改动暂存，切换到自己的分支再应用
+git stash
+git checkout test-你的分支名
+git stash pop
+```
+
+---
+
 ## 测试截图
 
-`test_screenshots/` 文件夹中包含 25 张系统各功能页面的测试截图，包含登录页、仪表盘、商品管理、主播管理、话术管理、库存管理、采购管理、直播场次、售后管理、直播监控、选品分析等页面。
+`test_screenshots/` 文件夹中包含 25 张原开发者的系统功能测试截图。
 
-> 截图文件未包含在 Git 仓库中（已添加到 .gitignore），如需查看请找原开发者。
+> 每个人的测试截图请放在自己的 `test-screenshots-你的名字/` 文件夹中，跟随分支一起提交。
 
 ---
 
