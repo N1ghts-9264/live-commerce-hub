@@ -10,7 +10,6 @@ const route = useRoute()
 const menuItems = computed(() => {
   const allItems = [
     { path: '/dashboard', label: '数据总览', icon: 'layout-dashboard', roles: ['管理层', '运营人员', '采购人员', '仓储人员', '主播', '系统管理员'] },
-    { path: '/monitor', label: '直播监控', icon: 'radio', roles: ['运营人员', '管理层', '主播', '系统管理员'] },
     { path: '/live-sessions', label: '直播场次', icon: 'video', roles: ['运营人员', '管理层', '系统管理员'] },
     { path: '/selection', label: '选品分析', icon: 'target', roles: ['运营人员', '管理层', '采购人员', '系统管理员'] },
     { path: '/products', label: '商品管理', icon: 'package', roles: ['运营人员', '管理层', '采购人员', '系统管理员'] },

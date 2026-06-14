@@ -115,7 +115,7 @@ export const interactionsAPI = {
 export const dashboardAPI = {
   summary: () => api.get('/dashboard/summary'),
   trend: (days?: number) => api.get('/dashboard/trend', { params: { days } }),
-  topAnchors: (limit?: number) => api.get('/dashboard/top-anchors', { params: { limit } }),
+  topAnchors: (limit?: number, days?: number) => api.get('/dashboard/top-anchors', { params: { limit, days } }),
 }
 
 // Selection API

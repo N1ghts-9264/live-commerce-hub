@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { liveSessionsAPI, anchorsAPI } from '../api'
 import type { LiveSession, Anchor } from '../types'
@@ -60,8 +60,23 @@ function goMonitor(session: LiveSession) {
   router.push(`/monitor?id=${session.live_id}`)
 }
 
+const statusMeta: Record<string, { label: string; hint: string; className: string }> = {
+  '进行中': { label: '进行中', hint: '可进入实时监控', className: 'live' },
+  '已排期': { label: '已排期', hint: '等待开播', className: 'scheduled' },
+  '已结束': { label: '已结束', hint: '可查看复盘数据', className: 'ended' },
+}
+
+const statusCards = computed(() => ['进行中', '已排期', '已结束'].map((status) => ({
+  status,
+  count: sessions.value.filter((item) => item.live_status === status).length,
+  ...statusMeta[status],
+})))
+
 function formatDate(d: string) { return d ? new Date(d).toLocaleString('zh-CN') : '-' }
 function formatPrice(v: number) { return v ? '¥' + v.toLocaleString() : '-' }
+function getSessionRowClass(row: LiveSession) {
+  return `session-row status-${statusMeta[row.live_status]?.className || 'default'}`
+}
 
 function changePage(p: number) { page.value = p; load() }
 
@@ -76,7 +91,7 @@ const columns = [
   { key: 'live_status', label: '状态' },
   { key: 'online_peak', label: '峰值在线' },
   { key: 'total_sales', label: '销售额' },
-  { key: 'actions', label: '操作' },
+  { key: 'actions', label: '操作', sortable: false },
 ]
 
 const categories = ['女装', '美妆', '箱包', '运动户外', '零食', '家居用品', '母婴', '数码', '食品饮料']
@@ -96,7 +111,22 @@ const categories = ['女装', '美妆', '箱包', '运动户外', '零食', '家
       <button class="btn" @click="load()">刷新</button>
     </div>
 
-    <DataTable :columns="columns" :data="sessions" :loading="loading" @row-click="goMonitor">
+    <div class="status-strip">
+      <button
+        v-for="card in statusCards"
+        :key="card.status"
+        class="status-card"
+        :class="[card.className, { active: statusFilter === card.status }]"
+        type="button"
+        @click="statusFilter = statusFilter === card.status ? '' : card.status; load()"
+      >
+        <span class="status-card-label">{{ card.label }}</span>
+        <strong>{{ card.count }}</strong>
+        <span>{{ card.hint }}</span>
+      </button>
+    </div>
+
+    <DataTable :columns="columns" :data="sessions" :loading="loading" :row-class="getSessionRowClass" @row-click="goMonitor">
       <template #cell-start_time="{ value }">{{ formatDate(value) }}</template>
       <template #cell-live_status="{ value }">
         <StatusBadge :status="value" />
@@ -104,7 +134,7 @@ const categories = ['女装', '美妆', '箱包', '运动户外', '零食', '家
       <template #cell-online_peak="{ value }">{{ value?.toLocaleString() || '-' }}</template>
       <template #cell-total_sales="{ value }">{{ formatPrice(value) }}</template>
       <template #cell-actions="{ row }">
-        <button v-if="row.live_status === '已排期' || row.live_status === '进行中'" class="btn small primary" @click="goMonitor(row)">
+        <button v-if="row.live_status === '已排期' || row.live_status === '进行中'" class="btn small primary" @click.stop="goMonitor(row)">
           {{ row.live_status === '进行中' ? '监控中' : '开启直播' }}
         </button>
         <button v-else class="btn small" disabled>已结束</button>
@@ -153,3 +183,87 @@ const categories = ['女装', '美妆', '箱包', '运动户外', '零食', '家
     </div>
   </div>
 </template>
+
+<style scoped>
+.status-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.status-card {
+  border: 1px solid var(--rule-soft);
+  background: var(--paper-dark);
+  color: var(--ink);
+  padding: 14px 16px;
+  text-align: left;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  align-items: end;
+}
+
+.status-card strong {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  line-height: 1;
+}
+
+.status-card span:last-child {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.status-card-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+
+.status-card.live,
+.status-card.live.active {
+  border-left: 4px solid var(--vermillion);
+}
+
+.status-card.scheduled,
+.status-card.scheduled.active {
+  border-left: 4px solid var(--info);
+}
+
+.status-card.ended,
+.status-card.ended.active {
+  border-left: 4px solid var(--success);
+}
+
+.status-card.active {
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+:deep(.session-row td:first-child) {
+  border-left: 4px solid transparent;
+}
+
+:deep(.session-row.status-live td:first-child) {
+  border-left-color: var(--vermillion);
+}
+
+:deep(.session-row.status-scheduled td:first-child) {
+  border-left-color: var(--info);
+}
+
+:deep(.session-row.status-ended td:first-child) {
+  border-left-color: var(--success);
+}
+
+:deep(.session-row.status-live td) {
+  background: rgba(196, 30, 58, 0.035);
+}
+
+@media (max-width: 900px) {
+  .status-strip {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

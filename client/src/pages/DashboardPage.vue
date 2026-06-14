@@ -23,13 +23,14 @@ const summary = ref<DashboardSummary | null>(null)
 const trend = ref<any[]>([])
 const topAnchors = ref<any[]>([])
 const loading = ref(true)
+const dashboardDays = 30
 
 onMounted(async () => {
   try {
     const [s, t, a] = await Promise.all([
       dashboardAPI.summary(),
-      dashboardAPI.trend(30),
-      dashboardAPI.topAnchors(5),
+      dashboardAPI.trend(dashboardDays),
+      dashboardAPI.topAnchors(5, dashboardDays),
     ])
     summary.value = s.data
     trend.value = t.data
@@ -150,11 +151,31 @@ const chartOptions = computed(() => ({
 function getLevelClass(level: string) {
   return `level-${level}`
 }
+
+const periodText = computed(() => {
+  if (!summary.value?.period) return `近${dashboardDays}天`
+  return `${summary.value.period.label} · ${summary.value.period.startDate} 至 ${summary.value.period.endDate}`
+})
 </script>
 
 <template>
   <PageHeader title="运营数据总览" subtitle="直播电商业务全景" />
   <div class="page-body">
+    <div class="period-banner" v-if="summary">
+      <div>
+        <span class="period-label">统计周期</span>
+        <strong>{{ periodText }}</strong>
+      </div>
+      <div>
+        <span class="period-label">对比口径</span>
+        <strong>{{ summary.period?.compareLabel || '较前30天' }}</strong>
+      </div>
+      <div>
+        <span class="period-label">库存口径</span>
+        <strong>{{ summary.period?.stockSnapshotLabel || '当前快照' }}</strong>
+      </div>
+    </div>
+
     <!-- KPI Row -->
     <div class="kpi-row" v-if="summary">
       <KpiCard label="GMV 总销售额" :value="formatCurrency(summary.totalGmv)" :change="`${summary.gmvChange > 0 ? '+' : ''}${summary.gmvChange}% 环比`" :change-type="summary.gmvChange >= 0 ? 'up' : 'down'" />
@@ -168,7 +189,7 @@ function getLevelClass(level: string) {
       <div class="card">
         <div class="card-header">
           <span class="card-title">销售趋势（近30天）</span>
-          <span class="card-extra">GMV / 订单数</span>
+          <span class="card-extra">{{ periodText }} · GMV / 订单数</span>
         </div>
         <div class="card-divider"></div>
         <div class="card-body">
@@ -183,7 +204,7 @@ function getLevelClass(level: string) {
       <div class="card">
         <div class="card-header">
           <span class="card-title">主播排名 TOP5</span>
-          <span class="card-extra">按累计 GMV</span>
+          <span class="card-extra">近30天 GMV</span>
         </div>
         <div class="card-divider"></div>
         <div class="card-body">
@@ -209,6 +230,34 @@ function getLevelClass(level: string) {
 </template>
 
 <style scoped>
+.period-banner {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 16px;
+  margin-bottom: var(--space-lg);
+  padding: 14px 18px;
+  border: 1px solid var(--rule-soft);
+  background: var(--paper-dark);
+}
+
+.period-banner div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.period-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  letter-spacing: 0.06em;
+}
+
+.period-banner strong {
+  font-size: 14px;
+  color: var(--ink);
+}
+
 .chart-wrap {
   width: 100%;
   height: 300px;
@@ -217,5 +266,11 @@ function getLevelClass(level: string) {
 .chart-wrap canvas {
   width: 100% !important;
   height: 100% !important;
+}
+
+@media (max-width: 900px) {
+  .period-banner {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

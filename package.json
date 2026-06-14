@@ -10,7 +10,7 @@
     "seed": "cd server && npm run seed",
     "seed:acceptance": "cd server && npm run seed:acceptance",
     "test:server": "cd server && npm run test:acceptance",
-    "test:client": "cd client && npm run test:realtime",
+    "test:client": "cd client && npm run test:realtime && npm run test:table",
     "test:acceptance": "npm run test:server && npm run test:client",
     "build:server": "cd server && npm run build",
     "build:client": "cd client && npm run build",

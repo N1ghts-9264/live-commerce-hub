@@ -220,6 +220,13 @@ export interface DashboardSummary {
   gmvChange: number
   ordersChange: number
   conversionChange: number
+  period?: {
+    label: string
+    startDate: string
+    endDate: string
+    compareLabel: string
+    stockSnapshotLabel: string
+  }
 }
 
 export interface TrendData {

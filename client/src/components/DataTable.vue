@@ -1,13 +1,56 @@
 <script setup lang="ts" generic="T extends Record<string, any>">
-defineProps<{
-  columns: { key: string; label: string; width?: string }[]
+import { computed, ref } from 'vue'
+import { getValueByPath, sortRows, type SortDirection, type SortState } from '../utils/tableSort'
+
+type Column = { key: string; label: string; width?: string; sortable?: boolean }
+
+const props = defineProps<{
+  columns: Column[]
   data: T[]
   loading?: boolean
+  rowClass?: string | ((row: T) => string)
 }>()
 
 defineEmits<{
   rowClick: [row: T]
 }>()
+
+defineSlots<{
+  [name: string]: (props: { row: T; value: any }) => any
+}>()
+
+const sortState = ref<SortState | null>(null)
+
+const sortedData = computed(() => sortRows(props.data, sortState.value))
+
+function isSortable(col: Column) {
+  return col.sortable !== false && col.key !== 'actions'
+}
+
+function sortAria(col: Column) {
+  if (!isSortable(col)) return undefined
+  if (sortState.value?.key !== col.key) return 'none'
+  return sortState.value.direction === 'desc' ? 'descending' : 'ascending'
+}
+
+function toggleSort(col: Column) {
+  if (!isSortable(col)) return
+  if (sortState.value?.key === col.key) {
+    const direction: SortDirection = sortState.value.direction === 'desc' ? 'asc' : 'desc'
+    sortState.value = { key: col.key, direction }
+    return
+  }
+  sortState.value = { key: col.key, direction: 'desc' }
+}
+
+function getCellValue(row: T, key: string) {
+  return getValueByPath(row, key)
+}
+
+function getRowClass(row: T) {
+  if (!props.rowClass) return ''
+  return typeof props.rowClass === 'function' ? props.rowClass(row) : props.rowClass
+}
 </script>
 
 <template>
@@ -15,8 +58,25 @@ defineEmits<{
     <table>
       <thead>
         <tr>
-          <th v-for="col in columns" :key="col.key" :style="col.width ? { width: col.width } : {}">
-            {{ col.label }}
+          <th
+            v-for="col in columns"
+            :key="col.key"
+            :style="col.width ? { width: col.width } : {}"
+            :aria-sort="sortAria(col)"
+            :class="{ sortable: isSortable(col), sorted: sortState?.key === col.key }"
+          >
+            <button
+              v-if="isSortable(col)"
+              type="button"
+              class="sort-header"
+              @click="toggleSort(col)"
+            >
+              <span>{{ col.label }}</span>
+              <span class="sort-indicator">
+                {{ sortState?.key === col.key ? (sortState.direction === 'desc' ? '↓' : '↑') : '↕' }}
+              </span>
+            </button>
+            <span v-else>{{ col.label }}</span>
           </th>
         </tr>
       </thead>
@@ -31,10 +91,10 @@ defineEmits<{
             暂无数据
           </td>
         </tr>
-        <tr v-for="(row, idx) in data" :key="idx" @click="$emit('rowClick', row)" style="cursor:pointer;">
+        <tr v-for="(row, idx) in sortedData" :key="idx" :class="getRowClass(row)" @click="$emit('rowClick', row)" style="cursor:pointer;">
           <td v-for="col in columns" :key="col.key">
-            <slot :name="'cell-' + col.key" :row="row" :value="row[col.key]">
-              {{ row[col.key] }}
+            <slot :name="'cell-' + col.key" :row="row" :value="getCellValue(row, col.key)">
+              {{ getCellValue(row, col.key) }}
             </slot>
           </td>
         </tr>
@@ -42,3 +102,27 @@ defineEmits<{
     </table>
   </div>
 </template>
+
+<style scoped>
+.sort-header {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: inherit;
+}
+
+th.sortable:hover {
+  color: var(--ink);
+}
+
+th.sorted {
+  color: var(--ink);
+}
+
+.sort-indicator {
+  font-size: 10px;
+  color: var(--ink-soft);
+}
+</style>
