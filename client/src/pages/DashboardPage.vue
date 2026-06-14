@@ -130,7 +130,7 @@ const chartOptions = computed(() => ({
       ticks: {
         font: { family: "'JetBrains Mono', monospace", size: 10 },
         color: '#6A6A64',
-        callback: (v: number) => v >= 10000 ? (v / 10000).toFixed(0) + '万' : v,
+        callback: (v: any) => v >= 10000 ? (v / 10000).toFixed(0) + '万' : v,
       },
       beginAtZero: true,
     },

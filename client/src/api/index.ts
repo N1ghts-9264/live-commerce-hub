@@ -77,7 +77,7 @@ export const purchasesAPI = {
   create: (data: any) => api.post('/purchases', data),
   updateStatus: (id: string, status: string) => api.put(`/purchases/${id}/status`, { status }),
   delete: (id: string) => api.delete(`/purchases/${id}`),
-  suggestions: () => api.get('/purchase-suggestions'),
+  suggestions: (params?: any) => api.get('/purchase-suggestions', { params }),
 }
 
 // Live Sessions API

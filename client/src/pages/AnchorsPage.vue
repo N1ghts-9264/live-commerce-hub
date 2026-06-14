@@ -183,7 +183,6 @@ async function viewDetail(a: Anchor) {
 function changePage(p: number) { page.value = p; load() }
 function getLevelClass(l: string) { return `level-${l}` }
 function formatCurrency(v: number) { return v >= 10000 ? '¥' + (v / 10000).toFixed(1) + '万' : '¥' + v.toLocaleString() }
-function formatTime(d: string) { return d ? new Date(d).toLocaleString('zh-CN') : '-' }
 function isTop(val: number, metric: string) { return compareHighlights.value[metric] > 0 && val === compareHighlights.value[metric] }
 
 onMounted(() => load())

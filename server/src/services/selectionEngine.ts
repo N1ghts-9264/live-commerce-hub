@@ -10,6 +10,87 @@ const WEIGHTS = {
   quality: 0.15,
 };
 
+export type TrendPeriod = 'recent' | 'previous';
+
+export interface TrendMetricRow {
+  period: TrendPeriod;
+  sales_volume?: number | string | null;
+  gmv?: number | string | null;
+  conversion_rate?: number | string | null;
+  interaction_heat?: number | string | null;
+}
+
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+const num = (value: number | string | null | undefined) => Number(value) || 0;
+
+function growthRate(recent: number, previous: number) {
+  if (previous <= 0 && recent <= 0) return 0;
+  if (previous <= 0) return 1;
+  return clamp((recent - previous) / previous, -1, 1);
+}
+
+export function calculateTrendScore(rows: TrendMetricRow[]) {
+  if (rows.length === 0) return 60;
+
+  const recent = rows.find((r) => r.period === 'recent');
+  const previous = rows.find((r) => r.period === 'previous');
+  if (!recent && !previous) return 60;
+  if (recent && !previous) return 68;
+  if (!recent && previous) return 45;
+
+  const salesGrowth = growthRate(num(recent?.sales_volume), num(previous?.sales_volume));
+  const gmvGrowth = growthRate(num(recent?.gmv), num(previous?.gmv));
+  const conversionGrowth = growthRate(num(recent?.conversion_rate), num(previous?.conversion_rate));
+  const heatGrowth = growthRate(num(recent?.interaction_heat), num(previous?.interaction_heat));
+  const weightedGrowth = gmvGrowth * 0.35 + salesGrowth * 0.25 + conversionGrowth * 0.25 + heatGrowth * 0.15;
+
+  return Math.round(clamp(60 + weightedGrowth * 30, 20, 95));
+}
+
+export function getTrendLabel(trendScore: number) {
+  if (trendScore > 75) return '上升 ↗';
+  if (trendScore < 45) return '下降 ↘';
+  return '平稳';
+}
+
+async function getProductTrendScore(productId: string) {
+  const latest = await knex('ProductPerformance')
+    .join('LiveSession', 'ProductPerformance.live_id', 'LiveSession.live_id')
+    .where('ProductPerformance.product_id', productId)
+    .max('LiveSession.start_time as latest_time')
+    .first();
+
+  if (!latest?.latest_time) return 60;
+
+  const latestTime = new Date(latest.latest_time);
+  const recentStart = new Date(latestTime);
+  recentStart.setDate(recentStart.getDate() - 30);
+  const previousStart = new Date(latestTime);
+  previousStart.setDate(previousStart.getDate() - 60);
+
+  const selectTrendStats = () => knex('ProductPerformance')
+    .join('LiveSession', 'ProductPerformance.live_id', 'LiveSession.live_id')
+    .where('ProductPerformance.product_id', productId)
+    .sum('ProductPerformance.sales_volume as sales_volume')
+    .sum('ProductPerformance.gmv as gmv')
+    .avg('ProductPerformance.conversion_rate as conversion_rate')
+    .avg('ProductPerformance.interaction_heat as interaction_heat')
+    .first();
+
+  const [recent, previous] = await Promise.all([
+    selectTrendStats().where('LiveSession.start_time', '>=', recentStart),
+    selectTrendStats()
+      .where('LiveSession.start_time', '>=', previousStart)
+      .where('LiveSession.start_time', '<', recentStart),
+  ]);
+
+  const rows: TrendMetricRow[] = [];
+  if (recent?.sales_volume || recent?.gmv) rows.push({ period: 'recent', ...recent });
+  if (previous?.sales_volume || previous?.gmv) rows.push({ period: 'previous', ...previous });
+
+  return calculateTrendScore(rows);
+}
+
 // Category-wise averages (runtime computed)
 async function getCategoryAverages(category: string) {
   const stats = await knex('ProductPerformance')
@@ -96,8 +177,8 @@ export async function getProductRankings(category?: string, sortBy?: string) {
       100
     );
 
-    // 4. Trend Score (simplified linear regression)
-    const trendScore = 60 + Math.random() * 40; // Placeholder: real impl would use date-segmented data
+    // 4. Trend Score: deterministic recent-vs-previous performance comparison
+    const trendScore = await getProductTrendScore(p.product_id);
 
     // 5. Quality Score
     const qualityScore = Math.min(
@@ -114,9 +195,7 @@ export async function getProductRankings(category?: string, sortBy?: string) {
       qualityScore * WEIGHTS.quality;
 
     // Trend label
-    let trendLabel = '平稳';
-    if (trendScore > 75) trendLabel = '上升 ↗';
-    else if (trendScore < 45) trendLabel = '下降 ↘';
+    const trendLabel = getTrendLabel(trendScore);
 
     scored.push({
       ...p,

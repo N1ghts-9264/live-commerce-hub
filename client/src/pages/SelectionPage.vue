@@ -11,6 +11,10 @@ const loading = ref(false)
 const categoryFilter = ref('')
 const sortBy = ref('')
 const selectedProductId = ref('')
+const selectedProductName = ref('')
+const coldStartLoading = ref(false)
+const coldStartResult = ref<any>(null)
+const coldStartError = ref('')
 
 const categories = ['女装', '美妆', '箱包', '运动户外', '零食', '家居用品', '母婴', '数码', '食品饮料']
 
@@ -24,13 +28,45 @@ async function load() {
 
 async function loadRecommendations(productId: string) {
   selectedProductId.value = productId
+  selectedProductName.value = rankings.value.find((p) => p.product_id === productId)?.product_name || ''
   const { data } = await selectionAPI.recommendations(productId)
   recommendations.value = data
+}
+
+async function selectProduct(row: any) {
+  await loadRecommendations(row.product_id)
+}
+
+async function runColdStart() {
+  if (!selectedProductId.value) return
+  coldStartLoading.value = true
+  coldStartError.value = ''
+  try {
+    const { data } = await selectionAPI.coldstart(selectedProductId.value)
+    coldStartResult.value = data
+  } catch (err: any) {
+    coldStartError.value = err?.response?.data?.message || err?.message || '新品冷启动评估失败'
+  } finally {
+    coldStartLoading.value = false
+  }
 }
 
 async function loadReport() {
   const { data } = await selectionAPI.advisorReport()
   advisorReport.value = data
+}
+
+function formatAssessment(value: any) {
+  if (!value) return []
+  if (typeof value === 'string') return [{ label: '评估结论', value }]
+  const labels: Record<string, string> = {
+    potential_level: '潜力等级',
+    estimated_conversion: '预估转化',
+    target_audience: '目标人群',
+    selling_angle: '讲解角度',
+    risk_notes: '风险提示',
+  }
+  return Object.entries(value).map(([key, val]) => ({ label: labels[key] || key, value: String(val) }))
 }
 
 onMounted(() => { load(); loadReport() })
@@ -73,6 +109,10 @@ const recColumns = [
       </select>
       <button class="btn" @click="load()">刷新</button>
       <button class="btn" @click="loadReport()">顾问报告</button>
+      <button class="btn btn-primary" :disabled="!selectedProductId || coldStartLoading" @click="runColdStart">
+        {{ coldStartLoading ? '评估中...' : '新品冷启动评估' }}
+      </button>
+      <span v-if="selectedProductName" style="color:var(--ink-soft);font-size:13px;">已选：{{ selectedProductName }}</span>
     </div>
 
     <!-- Advisor Report -->
@@ -96,9 +136,9 @@ const recColumns = [
       <div class="card-header"><span class="card-title">智能选品排名 (五维评分)</span></div>
       <div class="card-divider"></div>
       <div class="card-body">
-        <DataTable :columns="rankColumns" :data="rankings" :loading="loading">
+        <DataTable :columns="rankColumns" :data="rankings" :loading="loading" @row-click="selectProduct">
           <template #cell-sale_price="{ value }">¥{{ value }}</template>
-          <template #cell-['scores.composite']="{ row }">
+          <template #[`cell-scores.composite`]="{ row }">
             <span style="font-weight:700;font-family:var(--font-mono);">{{ row.scores?.composite }}</span>
           </template>
           <template #cell-trendLabel="{ value }">
@@ -107,6 +147,44 @@ const recColumns = [
             </span>
           </template>
         </DataTable>
+      </div>
+    </div>
+
+    <!-- Cold Start -->
+    <div v-if="coldStartResult || coldStartError" class="card" style="margin-bottom:24px;">
+      <div class="card-header"><span class="card-title">新品冷启动评估</span></div>
+      <div class="card-divider"></div>
+      <div class="card-body">
+        <div v-if="coldStartError" style="color:var(--vermillion);font-size:13px;">{{ coldStartError }}</div>
+        <div v-else class="cold-grid">
+          <div class="cold-metric">
+            <span>预估分</span>
+            <strong>{{ coldStartResult.estimatedScore }}</strong>
+          </div>
+          <div class="cold-metric">
+            <span>置信度</span>
+            <strong>{{ coldStartResult.confidence }}</strong>
+          </div>
+          <div class="cold-metric">
+            <span>探索加权</span>
+            <strong>+{{ coldStartResult.explorationBoost }}</strong>
+          </div>
+          <div class="assessment-panel">
+            <div v-for="item in formatAssessment(coldStartResult.llmAssessment)" :key="item.label" class="assessment-row">
+              <span>{{ item.label }}</span>
+              <strong>{{ item.value }}</strong>
+            </div>
+          </div>
+        </div>
+        <div v-if="coldStartResult?.similarProducts?.length" style="margin-top:16px;">
+          <div style="font-weight:600;margin-bottom:8px;">相似商品参照</div>
+          <div class="similar-list">
+            <div v-for="p in coldStartResult.similarProducts" :key="p.product_id" class="similar-item">
+              <span>{{ p.product_name }}</span>
+              <strong>{{ (p.similarity * 100).toFixed(1) }}%</strong>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -126,3 +204,74 @@ const recColumns = [
     </div>
   </div>
 </template>
+
+<style scoped>
+.cold-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: 12px;
+}
+
+.cold-metric {
+  border: 1px solid var(--rule-soft);
+  border-radius: 8px;
+  padding: 12px;
+  min-height: 72px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.cold-metric span,
+.assessment-row span {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.cold-metric strong {
+  font-family: var(--font-mono);
+  font-size: 22px;
+}
+
+.assessment-panel {
+  grid-column: 1 / -1;
+  border: 1px solid var(--rule-soft);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.assessment-row {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 12px;
+  padding: 6px 0;
+  font-size: 13px;
+}
+
+.similar-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.similar-item {
+  border: 1px solid var(--rule-soft);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+@media (max-width: 720px) {
+  .cold-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .assessment-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+</style>
