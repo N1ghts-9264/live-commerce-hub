@@ -9,7 +9,9 @@
     "migrate": "cd server && npm run migrate",
     "seed": "cd server && npm run seed",
     "seed:acceptance": "cd server && npm run seed:acceptance",
-    "test:acceptance": "cd server && npm run test:acceptance",
+    "test:server": "cd server && npm run test:acceptance",
+    "test:client": "cd client && npm run test:realtime",
+    "test:acceptance": "npm run test:server && npm run test:client",
     "build:server": "cd server && npm run build",
     "build:client": "cd client && npm run build",
     "build": "npm run build:server && npm run build:client"

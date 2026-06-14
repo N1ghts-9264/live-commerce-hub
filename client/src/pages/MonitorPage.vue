@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { liveSessionsAPI } from '../api'
 import PageHeader from '../components/PageHeader.vue'
+import { appendRealtimePoint, secondsSince } from '../utils/realtimeSeries'
 import { Line, Doughnut } from 'vue-chartjs'
 import {
   Chart as ChartJS,
@@ -26,6 +27,8 @@ const sessionId = ref((route.query.id as string) || '')
 const session = ref<any>(null)
 const streaming = ref(false)
 const eventSource = ref<EventSource | null>(null)
+const localTimer = ref<number | null>(null)
+const simulationStartMs = ref(0)
 
 const metrics = ref({ online: 0, totalOrders: 0, gmv: 0, peakOnline: 0, duration: 0 })
 const orders = ref<any[]>([])
@@ -66,12 +69,21 @@ function connectSSE() {
 
   es.addEventListener('connected', () => { connected.value = true })
   es.addEventListener('metrics', (e) => {
-    metrics.value = JSON.parse(e.data)
-    onlineHistory.value.push(metrics.value.online)
-    gmvHistory.value.push(metrics.value.gmv)
-    timeLabels.value.push(new Date().toLocaleTimeString())
-    if (onlineHistory.value.length > 60) { onlineHistory.value.shift(); timeLabels.value.shift() }
-    if (gmvHistory.value.length > 60) gmvHistory.value.shift()
+    const nextMetrics = JSON.parse(e.data)
+    if (!simulationStartMs.value) simulationStartMs.value = Date.now() - (Number(nextMetrics.duration) || 0) * 1000
+    metrics.value = { ...nextMetrics, duration: secondsSince(simulationStartMs.value) }
+    const nextSeries = appendRealtimePoint({
+      labels: timeLabels.value,
+      online: onlineHistory.value,
+      gmv: gmvHistory.value,
+      label: new Date().toLocaleTimeString(),
+      onlineValue: metrics.value.online,
+      gmvValue: metrics.value.gmv,
+      maxPoints: 60,
+    })
+    timeLabels.value = nextSeries.labels
+    onlineHistory.value = nextSeries.online
+    gmvHistory.value = nextSeries.gmv
   })
   es.addEventListener('order', (e) => {
     const order = JSON.parse(e.data)
@@ -95,10 +107,26 @@ function connectSSE() {
   es.onerror = () => { connected.value = false }
 }
 
+function startLocalTimer() {
+  if (!simulationStartMs.value) simulationStartMs.value = Date.now() - metrics.value.duration * 1000
+  if (localTimer.value) window.clearInterval(localTimer.value)
+  localTimer.value = window.setInterval(() => {
+    metrics.value = { ...metrics.value, duration: secondsSince(simulationStartMs.value) }
+  }, 1000)
+}
+
+function stopLocalTimer() {
+  if (localTimer.value) window.clearInterval(localTimer.value)
+  localTimer.value = null
+}
+
 function startSim() {
   if (!sessionId.value) return
   liveSessionsAPI.startSimulate(sessionId.value).then(() => {
     streaming.value = true
+    simulationStartMs.value = Date.now()
+    metrics.value = { ...metrics.value, duration: 0 }
+    startLocalTimer()
     connectSSE()
     loadSession()
   }).catch((e: any) => { alert('启动失败: ' + (e.response?.data?.message || e.message)) })
@@ -108,6 +136,8 @@ function stopSim() {
   if (!sessionId.value) return
   liveSessionsAPI.stopSimulate(sessionId.value).then(() => {
     streaming.value = false
+    stopLocalTimer()
+    simulationStartMs.value = 0
     if (eventSource.value) eventSource.value.close()
     loadSession()
   })
@@ -164,6 +194,8 @@ onMounted(async () => {
     await loadSession()
     if (session.value?.live_status === '进行中') {
       streaming.value = true
+      simulationStartMs.value = Date.now() - metrics.value.duration * 1000
+      startLocalTimer()
       connectSSE()
     }
   }
@@ -171,6 +203,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (eventSource.value) eventSource.value.close()
+  stopLocalTimer()
 })
 </script>
 
