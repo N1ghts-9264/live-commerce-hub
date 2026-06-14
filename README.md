@@ -195,6 +195,21 @@ npm run seed
 
 > 如果 seed 过程中出现报错，通常是数据库连接配置问题，检查 `.env` 文件的数据库密码是否正确。
 
+#### 备选方案：直接导入预置 SQL 文件（推荐，更快更一致）
+
+如果你不想运行 seed，或者想让数据与项目作者的**完全一致**，可以直接导入预置的 SQL 文件：
+
+```bash
+# 在项目根目录执行
+sqlcmd -S localhost,1433 -U sa -P 你的sa密码 -d live_commerce_hub -i server\db\export.sql
+```
+
+这个 SQL 文件已经包含了完整的建表 + 数据（约 28 万条），**一步到位**，无需再执行 `npm run migrate` 和 `npm run seed`。
+
+> 两种方式二选一即可：
+> - **结构不一样但数据随机**：用 `npm run migrate` + `npm run seed`（每次运行生成的数据不同）
+> - **数据完全一致**：用 `sqlcmd -i server\db\export.sql`（与项目作者数据库一模一样）
+
 ---
 
 ### 第五步：启动项目

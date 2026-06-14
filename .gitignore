@@ -40,6 +40,9 @@ Desktop.ini
 # ===== Test screenshots (optional, can be large) =====
 test_screenshots/
 
+# ===== Database export tool (one-time script) =====
+server/export-db.ts
+
 # ===== Temporary files =====
 *.tmp
 *.temp
