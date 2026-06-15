@@ -57,11 +57,30 @@ async function removeDetail() {
 
 // Create modal
 const showCreate = ref(false)
+const showNewProduct = ref(false)
 const form = ref({ supplier_id: '', sku_id: '', purchase_quantity: 0, purchase_price: 0, purchase_status: '待审核', expected_arrival_time: '' })
+const newProductForm = ref({
+  product_name: '',
+  category: '',
+  brand: '',
+  supplier_id: '',
+  sku_name: '',
+  specification: '标准规格',
+  cost_price: 0,
+  sale_price: 0,
+  purchase_quantity: 100,
+  purchase_price: 0,
+  warehouse_name: '主仓',
+  safety_stock: 30,
+  warning_threshold: 50,
+  expected_arrival_time: '',
+  selling_points: '',
+})
 const selectedProductId = ref('')
 const productSkus = ref<any[]>([])
 
 const totalPrice = computed(() => (form.value.purchase_quantity || 0) * (form.value.purchase_price || 0))
+const newProductTotalPrice = computed(() => (newProductForm.value.purchase_quantity || 0) * (newProductForm.value.purchase_price || 0))
 
 async function onProductChange() {
   form.value.sku_id = ''
@@ -126,6 +145,40 @@ async function saveCreate() {
     await load()
     showSuggestions.value = false
   } catch (e: any) { alert(e.response?.data?.message || '保存失败') }
+}
+
+function openNewProductPurchase() {
+  newProductForm.value = {
+    product_name: '',
+    category: '',
+    brand: '新品候选',
+    supplier_id: suppliers.value[0]?.supplier_id || '',
+    sku_name: '',
+    specification: '标准规格',
+    cost_price: 0,
+    sale_price: 0,
+    purchase_quantity: 100,
+    purchase_price: 0,
+    warehouse_name: '主仓',
+    safety_stock: 30,
+    warning_threshold: 50,
+    expected_arrival_time: defaultArrival(),
+    selling_points: '',
+  }
+  showNewProduct.value = true
+}
+
+async function saveNewProductPurchase() {
+  try {
+    const payload = {
+      ...newProductForm.value,
+      sku_name: newProductForm.value.sku_name || `${newProductForm.value.product_name} 默认SKU`,
+      purchase_price: newProductForm.value.purchase_price || newProductForm.value.cost_price,
+    }
+    await purchasesAPI.createNewProduct(payload)
+    showNewProduct.value = false
+    await load()
+  } catch (e: any) { alert(e.response?.data?.message || '新品采购保存失败') }
 }
 
 async function load() {
@@ -223,6 +276,7 @@ const sugColumns = [
         {{ showSuggestions ? '隐藏建议' : '采购建议' }}
       </button>
       <button class="btn primary" @click="openCreate()">+ 新增采购单</button>
+      <button class="btn" @click="openNewProductPurchase()">新增新品采购</button>
       <button class="btn" @click="load()">刷新</button>
     </div>
 
@@ -361,6 +415,92 @@ const sugColumns = [
         </div>
       </div>
     </div>
+
+    <!-- New Product Purchase Modal -->
+    <div v-if="showNewProduct" class="modal-overlay" @click.self="showNewProduct = false">
+      <div class="modal" style="min-width:680px;max-width:760px;padding-top:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+          <span class="modal-title" style="margin-bottom:0;">新增新品采购</span>
+          <span class="modal-close" @click="showNewProduct = false">&times;</span>
+        </div>
+        <div class="new-product-note">
+          用于采购系统中尚不存在的新品。保存后会创建“待评估”商品、默认 SKU、主仓库存记录和待审核采购单。
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div class="form-group">
+            <label class="form-label">新品名称</label>
+            <input v-model="newProductForm.product_name" class="form-input" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">品类</label>
+            <input v-model="newProductForm.category" class="form-input" placeholder="如 美妆 / 数码 / 食品饮料" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">品牌</label>
+            <input v-model="newProductForm.brand" class="form-input" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">供应商</label>
+            <select v-model="newProductForm.supplier_id" class="form-select">
+              <option value="">请选择</option>
+              <option v-for="s in suppliers" :key="s.supplier_id" :value="s.supplier_id">{{ s.supplier_name }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">SKU 名称</label>
+            <input v-model="newProductForm.sku_name" class="form-input" placeholder="为空时自动生成默认SKU" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">规格</label>
+            <input v-model="newProductForm.specification" class="form-input" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">成本价</label>
+            <input v-model.number="newProductForm.cost_price" type="number" step="0.01" class="form-input" @change="newProductForm.purchase_price = newProductForm.purchase_price || newProductForm.cost_price" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">建议售价</label>
+            <input v-model.number="newProductForm.sale_price" type="number" step="0.01" class="form-input" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">采购数量</label>
+            <input v-model.number="newProductForm.purchase_quantity" type="number" class="form-input" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">采购价</label>
+            <input v-model.number="newProductForm.purchase_price" type="number" step="0.01" class="form-input" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">安全库存</label>
+            <input v-model.number="newProductForm.safety_stock" type="number" class="form-input" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">预警阈值</label>
+            <input v-model.number="newProductForm.warning_threshold" type="number" class="form-input" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">仓库</label>
+            <input v-model="newProductForm.warehouse_name" class="form-input" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">预计到货</label>
+            <input v-model="newProductForm.expected_arrival_time" type="date" class="form-input" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">卖点/采购理由</label>
+          <textarea v-model="newProductForm.selling_points" class="form-input" rows="3"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">采购总价</label>
+          <div class="total-price-display">¥{{ newProductTotalPrice.toLocaleString() }}</div>
+        </div>
+        <div class="form-actions">
+          <button class="btn" @click="showNewProduct = false">取消</button>
+          <button class="btn primary" @click="saveNewProductPurchase">创建新品与采购单</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -436,5 +576,15 @@ const sugColumns = [
   font-family: var(--font-serif);
   font-size: 22px; font-weight: 900;
   color: var(--vermillion);
+}
+
+.new-product-note {
+  border-left: 4px solid var(--vermillion);
+  background: var(--paper-dark);
+  padding: 12px;
+  margin-bottom: 16px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.6;
 }
 </style>

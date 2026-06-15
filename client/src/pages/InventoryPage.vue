@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { inventoryAPI } from '../api'
+import { inventoryAPI, purchasesAPI } from '../api'
 import type { Inventory } from '../types'
 import PageHeader from '../components/PageHeader.vue'
 import StatusBadge from '../components/StatusBadge.vue'
@@ -17,6 +17,9 @@ const pageSize = 20
 const statusFilter = ref('')
 const loading = ref(false)
 const showAlerts = ref(false)
+const showQuickPurchase = ref(false)
+const selectedInventory = ref<any>(null)
+const quickForm = ref({ purchase_quantity: 0, purchase_price: 0, expected_arrival_time: '' })
 
 const alertTotal = ref(0)
 const alertPage = ref(1)
@@ -52,6 +55,52 @@ function goToPurchase(row: any) {
   router.push({ path: '/purchasing', query: { sku_id: row.sku_id, product_name: row.product_name } })
 }
 
+function defaultArrival(days = 7) {
+  const d = new Date()
+  d.setDate(d.getDate() + Math.max(days, 1))
+  return d.toISOString().split('T')[0]
+}
+
+function openQuickPurchase(row: any) {
+  selectedInventory.value = row
+  quickForm.value = {
+    purchase_quantity: row.suggested_quantity || Math.max(row.safety_stock * 2, 10),
+    purchase_price: Number(row.cost_price) || 0,
+    expected_arrival_time: defaultArrival(row.delivery_cycle || 7),
+  }
+  showQuickPurchase.value = true
+}
+
+async function saveQuickPurchase() {
+  if (!selectedInventory.value) return
+  await purchasesAPI.create({
+    supplier_id: selectedInventory.value.supplier_id,
+    sku_id: selectedInventory.value.sku_id,
+    purchase_quantity: quickForm.value.purchase_quantity,
+    purchase_price: quickForm.value.purchase_price,
+    purchase_status: '待审核',
+    expected_arrival_time: quickForm.value.expected_arrival_time,
+  })
+  showQuickPurchase.value = false
+  selectedInventory.value = null
+  await load()
+  if (showAlerts.value) await fetchAlerts()
+}
+
+function riskType(level: string) {
+  if (level === '紧急' || level === '高') return 'danger'
+  if (level === '中') return 'warning'
+  return 'success'
+}
+
+const riskSummary = computed(() => {
+  const urgent = items.value.filter((item) => ['紧急', '高'].includes(item.stock_risk_level)).length
+  const live = items.value.filter((item) => (item.upcoming_live_demand || 0) > 0).length
+  const inbound = items.value.reduce((sum, item) => sum + Number(item.inbound_purchase_quantity || 0), 0)
+  const suggested = items.value.reduce((sum, item) => sum + Number(item.suggested_quantity || 0), 0)
+  return { urgent, live, inbound, suggested }
+})
+
 onMounted(() => load())
 
 const columns = [
@@ -59,8 +108,12 @@ const columns = [
   { key: 'sku_name', label: 'SKU' },
   { key: 'warehouse_name', label: '仓库' },
   { key: 'current_stock', label: '当前库存' },
-  { key: 'safety_stock', label: '安全库存' },
-  { key: 'inventory_status', label: '状态' },
+  { key: 'predicted_sales_30d', label: '30天预测' },
+  { key: 'upcoming_live_demand', label: '直播需求' },
+  { key: 'inbound_purchase_quantity', label: '在途' },
+  { key: 'suggested_quantity', label: '建议采购' },
+  { key: 'stock_risk_level', label: '风险' },
+  { key: 'actions', label: '操作', sortable: false },
 ]
 
 const alertColumns = [
@@ -69,8 +122,10 @@ const alertColumns = [
   { key: 'warehouse_name', label: '仓库' },
   { key: 'current_stock', label: '当前库存' },
   { key: 'safety_stock', label: '安全库存' },
-  { key: 'warning_threshold', label: '预警值' },
-  { key: 'inventory_status', label: '状态' },
+  { key: 'reorder_point', label: '动态补货点' },
+  { key: 'suggested_quantity', label: '建议采购' },
+  { key: 'stock_risk_level', label: '风险' },
+  { key: 'actions', label: '操作', sortable: false },
 ]
 </script>
 
@@ -89,10 +144,29 @@ const alertColumns = [
       <button class="btn" @click="load()">刷新</button>
     </div>
 
+    <div class="inventory-summary">
+      <div class="summary-item">
+        <span>高风险 SKU</span>
+        <strong>{{ riskSummary.urgent }}</strong>
+      </div>
+      <div class="summary-item">
+        <span>涉及直播备货</span>
+        <strong>{{ riskSummary.live }}</strong>
+      </div>
+      <div class="summary-item">
+        <span>在途采购</span>
+        <strong>{{ riskSummary.inbound }}</strong>
+      </div>
+      <div class="summary-item">
+        <span>本页建议采购</span>
+        <strong>{{ riskSummary.suggested }}</strong>
+      </div>
+    </div>
+
     <!-- Alert Section -->
     <div v-if="showAlerts" class="card" style="margin-bottom:24px;">
       <div class="card-header">
-        <span class="card-title">库存预警清单 ({{ alertTotal }} 项)</span>
+        <span class="card-title">动态库存风险清单 ({{ alertTotal }} 项)</span>
       </div>
       <div class="card-divider"></div>
       <div class="card-body">
@@ -100,8 +174,16 @@ const alertColumns = [
           <template #cell-current_stock="{ value }">
             <span style="color:var(--vermillion);font-weight:600;">{{ value }}</span>
           </template>
-          <template #cell-inventory_status="{ row }">
-            <StatusBadge :status="row.current_stock <= row.safety_stock ? '不足' : '正常'" type="danger" />
+          <template #cell-stock_risk_level="{ value }">
+            <StatusBadge :status="value" :type="riskType(value)" />
+          </template>
+          <template #cell-suggested_quantity="{ row }">
+            <span style="font-weight:700;color:var(--vermillion);">{{ row.suggested_quantity }}</span>
+          </template>
+          <template #cell-actions="{ row }">
+            <button class="btn small primary" :disabled="!row.supplier_id || !row.suggested_quantity" @click.stop="openQuickPurchase(row)">
+              一键采购
+            </button>
           </template>
         </DataTable>
         <div v-if="alerts.length === 0" style="padding:20px;color:var(--success);">所有库存正常</div>
@@ -112,15 +194,143 @@ const alertColumns = [
     <!-- Main Inventory Table -->
     <DataTable :columns="columns" :data="items" :loading="loading">
       <template #cell-current_stock="{ row }">
-        <span :style="{ color: row.current_stock <= row.safety_stock ? 'var(--vermillion)' : 'var(--ink)', fontWeight: row.current_stock <= row.safety_stock ? '600' : '400' }">
+        <span :style="{ color: ['紧急', '高'].includes(row.stock_risk_level) ? 'var(--vermillion)' : 'var(--ink)', fontWeight: ['紧急', '高'].includes(row.stock_risk_level) ? '600' : '400' }">
           {{ row.current_stock }}
         </span>
       </template>
-      <template #cell-inventory_status="{ row }">
-        <StatusBadge :status="row.current_stock <= row.safety_stock ? '不足' : '正常'" :type="row.current_stock <= row.safety_stock ? 'danger' : 'success'" />
+      <template #cell-suggested_quantity="{ row }">
+        <span :style="{ fontWeight: row.suggested_quantity > 0 ? 700 : 400, color: row.suggested_quantity > 0 ? 'var(--vermillion)' : 'var(--ink-soft)' }">
+          {{ row.suggested_quantity }}
+        </span>
+      </template>
+      <template #cell-stock_risk_level="{ value }">
+        <StatusBadge :status="value" :type="riskType(value)" />
+      </template>
+      <template #cell-actions="{ row }">
+        <button class="btn small primary" :disabled="!row.supplier_id || !row.suggested_quantity" @click.stop="openQuickPurchase(row)">
+          一键采购
+        </button>
       </template>
     </DataTable>
 
     <Pagination v-if="total > pageSize" :page="page" :total="total" :page-size="pageSize" @change="changePage" />
+
+    <div v-if="showQuickPurchase && selectedInventory" class="modal-overlay" @click.self="showQuickPurchase = false">
+      <div class="modal" style="min-width:560px;padding-top:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+          <span class="modal-title" style="margin-bottom:0;">库存一键采购</span>
+          <span class="modal-close" @click="showQuickPurchase = false">&times;</span>
+        </div>
+        <div class="purchase-context">
+          <div><span>商品</span><strong>{{ selectedInventory.product_name }}</strong></div>
+          <div><span>SKU</span><strong>{{ selectedInventory.sku_name }}</strong></div>
+          <div><span>供应商</span><strong>{{ selectedInventory.supplier_name }}</strong></div>
+          <div><span>风险</span><strong>{{ selectedInventory.stock_risk_level }}</strong></div>
+        </div>
+        <div class="reason-box">{{ selectedInventory.suggestion_reason }}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div class="form-group">
+            <label class="form-label">采购数量（默认推荐值，可修改）</label>
+            <input v-model.number="quickForm.purchase_quantity" type="number" min="1" class="form-input" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">采购价</label>
+            <input v-model.number="quickForm.purchase_price" type="number" step="0.01" class="form-input" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">预计到货</label>
+          <input v-model="quickForm.expected_arrival_time" type="date" class="form-input" />
+        </div>
+        <div class="form-actions">
+          <button class="btn" @click="showQuickPurchase = false">取消</button>
+          <button class="btn primary" @click="saveQuickPurchase">生成采购单</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
+
+<style scoped>
+.inventory-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.summary-item {
+  border: 1px solid var(--rule-soft);
+  padding: 14px 16px;
+  min-height: 76px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.summary-item span,
+.purchase-context span {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.summary-item strong {
+  font-family: var(--font-serif);
+  font-size: 26px;
+  color: var(--vermillion);
+}
+
+.purchase-context {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px 18px;
+  margin-bottom: 14px;
+}
+
+.purchase-context div {
+  border: 1px solid var(--rule-soft);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.purchase-context strong {
+  font-size: 13px;
+}
+
+.reason-box {
+  border-left: 4px solid var(--vermillion);
+  background: var(--paper-dark);
+  padding: 12px;
+  margin-bottom: 16px;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.modal-close {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  line-height: 1;
+  color: var(--ink-soft);
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.modal-close:hover {
+  color: var(--vermillion);
+}
+
+.btn.small {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+@media (max-width: 880px) {
+  .inventory-summary,
+  .purchase-context {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

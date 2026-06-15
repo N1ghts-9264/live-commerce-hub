@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import knex from '../db/knex';
 import { authenticate } from '../middleware/auth';
+import { buildInventoryPlans } from '../services/inventoryPlanning';
 
 const router = Router();
 router.use(authenticate);
@@ -18,22 +19,32 @@ router.get('/', async (req: Request, res: Response) => {
       .join('Product', 'SKU.product_id', 'Product.product_id')
       .select(
         'Inventory.*',
+        'SKU.product_id',
         'SKU.sku_name',
         'SKU.color',
         'SKU.size',
+        'SKU.warning_threshold',
+        'SKU.sales_volume',
         'Product.product_name',
-        'Product.category'
+        'Product.category',
+        'Product.product_status',
+        'Product.cost_price',
+        'Product.supplier_id',
+        'Supplier.supplier_name',
+        'Supplier.delivery_cycle'
       );
+    query = query.leftJoin('Supplier', 'Product.supplier_id', 'Supplier.supplier_id');
 
     if (warehouse) query = query.where('Inventory.warehouse_name', warehouse);
     if (status === '不足') query = query.where('Inventory.current_stock', '<=', knex.raw('Inventory.safety_stock'));
     else if (status === '正常') query = query.where('Inventory.current_stock', '>', knex.raw('Inventory.safety_stock'));
 
     const [{ count: total }] = await query.clone().clearSelect().count('* as count');
-    const data = await query
+    const rows = await query
       .orderBy('Inventory.last_update_time', 'desc')
       .offset((page - 1) * pageSize)
       .limit(pageSize);
+    const data = await buildInventoryPlans(rows);
 
     return res.json({ data, total: Number(total), page, pageSize });
   } catch (err: any) {
@@ -52,19 +63,29 @@ router.get('/alerts', async (req: Request, res: Response) => {
       .join('Product', 'SKU.product_id', 'Product.product_id')
       .select(
         'Inventory.*',
+        'SKU.product_id',
         'SKU.sku_name',
         'SKU.stock_quantity as sku_stock',
         'SKU.warning_threshold',
-        'Product.product_name'
+        'SKU.sales_volume',
+        'Product.product_name',
+        'Product.category',
+        'Product.product_status',
+        'Product.cost_price',
+        'Product.supplier_id',
+        'Supplier.supplier_name',
+        'Supplier.delivery_cycle'
       )
+      .leftJoin('Supplier', 'Product.supplier_id', 'Supplier.supplier_id')
       .where('Inventory.current_stock', '<=', knex.raw('Inventory.safety_stock'));
 
     const [{ count: total }] = await base.clone().clearSelect().count('* as count');
 
-    const data = await base
+    const rows = await base
       .orderBy('Inventory.current_stock', 'asc')
       .offset((page - 1) * pageSize)
       .limit(pageSize);
+    const data = await buildInventoryPlans(rows);
 
     return res.json({ data, total: Number(total), page, pageSize });
   } catch (err: any) {

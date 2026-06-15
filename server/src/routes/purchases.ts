@@ -70,6 +70,85 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/purchases/new-product
+router.post('/new-product', async (req: Request, res: Response) => {
+  try {
+    const productId = uuid().replace(/-/g, '').substring(0, 16);
+    const skuId = uuid().replace(/-/g, '').substring(0, 16);
+    const inventoryId = uuid().replace(/-/g, '').substring(0, 16);
+    const purchaseId = uuid().replace(/-/g, '').substring(0, 16);
+
+    const costPrice = Number(req.body.cost_price) || Number(req.body.purchase_price) || 0;
+    const salePrice = Number(req.body.sale_price) || Math.round(costPrice * 1.35 * 100) / 100;
+    const purchaseQuantity = Number(req.body.purchase_quantity) || 0;
+    if (!req.body.product_name || !req.body.category || !req.body.supplier_id || !purchaseQuantity || !costPrice) {
+      return res.status(400).json({ message: '新品名称、品类、供应商、采购数量和采购价不能为空' });
+    }
+
+    const now = new Date();
+    const result = await knex.transaction(async (trx) => {
+      const product = {
+        product_id: productId,
+        product_name: req.body.product_name,
+        category: req.body.category,
+        brand: req.body.brand || '新品候选',
+        cost_price: costPrice,
+        sale_price: salePrice,
+        gross_profit_rate: salePrice > 0 ? Number((((salePrice - costPrice) / salePrice) * 100).toFixed(2)) : 0,
+        product_status: '待评估',
+        supplier_id: req.body.supplier_id,
+        description: req.body.description || '由新品采购流程创建，进入冷启动评估候选池。',
+        selling_points: req.body.selling_points || '待直播试播验证',
+        create_time: now,
+      };
+      const sku = {
+        sku_id: skuId,
+        product_id: productId,
+        sku_name: req.body.sku_name || `${req.body.product_name} 默认SKU`,
+        color: req.body.color || '默认',
+        size: req.body.size || '默认',
+        specification: req.body.specification || '标准规格',
+        stock_quantity: 0,
+        warning_threshold: Number(req.body.warning_threshold) || Math.max(50, Math.ceil(purchaseQuantity * 0.3)),
+        sales_volume: 0,
+        sku_status: '在售',
+      };
+      const inventory = {
+        inventory_id: inventoryId,
+        sku_id: skuId,
+        warehouse_name: req.body.warehouse_name || '主仓',
+        batch_number: req.body.batch_number || `NEW-${productId.slice(0, 6)}`,
+        current_stock: Number(req.body.initial_stock) || 0,
+        inbound_quantity: 0,
+        outbound_quantity: 0,
+        safety_stock: Number(req.body.safety_stock) || Math.max(30, Math.ceil(purchaseQuantity * 0.2)),
+        inventory_status: '正常',
+        last_update_time: now,
+      };
+      const purchase = {
+        purchase_id: purchaseId,
+        supplier_id: req.body.supplier_id,
+        sku_id: skuId,
+        purchase_quantity: purchaseQuantity,
+        purchase_price: Number(req.body.purchase_price) || costPrice,
+        purchase_status: '待审核',
+        expected_arrival_time: req.body.expected_arrival_time || null,
+        create_time: now,
+      };
+
+      await trx('Product').insert(product);
+      await trx('SKU').insert(sku);
+      await trx('Inventory').insert(inventory);
+      await trx('PurchaseOrder').insert(purchase);
+      return { product, sku, inventory, purchase };
+    });
+
+    return res.status(201).json(result);
+  } catch (err: any) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
 // PUT /api/purchases/:id/status
 router.put('/:id/status', async (req: Request, res: Response) => {
   try {

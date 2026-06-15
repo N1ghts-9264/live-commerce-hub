@@ -75,6 +75,7 @@ export const purchasesAPI = {
   list: (params?: any) => api.get('/purchases', { params }),
   get: (id: string) => api.get(`/purchases/${id}`),
   create: (data: any) => api.post('/purchases', data),
+  createNewProduct: (data: any) => api.post('/purchases/new-product', data),
   updateStatus: (id: string, status: string) => api.put(`/purchases/${id}/status`, { status }),
   delete: (id: string) => api.delete(`/purchases/${id}`),
   suggestions: (params?: any) => api.get('/purchase-suggestions', { params }),
