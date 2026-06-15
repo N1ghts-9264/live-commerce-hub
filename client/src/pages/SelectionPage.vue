@@ -213,40 +213,19 @@ const recColumns = [
       </div>
     </div>
 
-    <!-- Rankings -->
-    <div class="card" style="margin-bottom:24px;">
-      <div class="card-header"><span class="card-title">智能选品排名 (五维评分)</span></div>
-      <div class="card-divider"></div>
-      <div class="card-body">
-        <DataTable :columns="rankColumns" :data="rankings" :loading="loading" @row-click="selectProduct">
-          <template #cell-product_name="{ row }">
-            <span style="font-weight:600;">{{ row.product_name }}</span>
-            <span v-if="row.isColdStartCandidate" class="new-product-mark">新品</span>
-          </template>
-          <template #cell-product_status="{ row }">
-            <span :class="row.isColdStartCandidate ? 'status-chip status-new' : 'status-chip'">
-              {{ row.isColdStartCandidate ? '待评估' : row.product_status }}
-            </span>
-          </template>
-          <template #cell-sale_price="{ value }">¥{{ value }}</template>
-          <template #[`cell-scores.composite`]="{ row }">
-            <span style="font-weight:700;font-family:var(--font-mono);">{{ row.scores?.composite }}</span>
-          </template>
-          <template #cell-trendLabel="{ value }">
-            <span :style="{ color: value?.includes('上升') ? 'var(--success)' : value?.includes('下降') ? 'var(--vermillion)' : 'var(--ink-soft)' }">
-              {{ value }}
-            </span>
-          </template>
-        </DataTable>
-      </div>
-    </div>
-
     <!-- Cold Start -->
-    <div v-if="coldStartResult || coldStartError" class="card" style="margin-bottom:24px;">
-      <div class="card-header"><span class="card-title">新品冷启动评估</span></div>
+    <div v-if="coldStartLoading || coldStartResult || coldStartError" class="card cold-feedback-card" style="margin-bottom:24px;">
+      <div class="card-header">
+        <span class="card-title">新品冷启动评估</span>
+        <span v-if="selectedProductName" class="report-meta">当前新品：{{ selectedProductName }}</span>
+      </div>
       <div class="card-divider"></div>
       <div class="card-body">
-        <div v-if="coldStartError" style="color:var(--vermillion);font-size:13px;">{{ coldStartError }}</div>
+        <div v-if="coldStartLoading" class="cold-loading">
+          <strong>正在评估新品潜力</strong>
+          <span>系统正在读取相似商品、品类趋势、供应履约、库存和试播信号。</span>
+        </div>
+        <div v-else-if="coldStartError" style="color:var(--vermillion);font-size:13px;">{{ coldStartError }}</div>
         <div v-else>
           <div class="cold-summary">
             <div class="cold-metric decision-card">
@@ -308,7 +287,7 @@ const recColumns = [
             <div><span>可播库存</span><strong>{{ coldStartResult.baselines?.inventoryTotal }}</strong></div>
           </div>
         </div>
-        <div v-if="coldStartResult?.similarProducts?.length" style="margin-top:16px;">
+        <div v-if="!coldStartLoading && coldStartResult?.similarProducts?.length" style="margin-top:16px;">
           <div style="font-weight:600;margin-bottom:8px;">相似商品参照</div>
           <div class="similar-list">
             <div v-for="p in coldStartResult.similarProducts" :key="p.product_id" class="similar-item">
@@ -317,6 +296,34 @@ const recColumns = [
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Rankings -->
+    <div class="card" style="margin-bottom:24px;">
+      <div class="card-header"><span class="card-title">智能选品排名 (五维评分)</span></div>
+      <div class="card-divider"></div>
+      <div class="card-body">
+        <DataTable :columns="rankColumns" :data="rankings" :loading="loading" @row-click="selectProduct">
+          <template #cell-product_name="{ row }">
+            <span style="font-weight:600;">{{ row.product_name }}</span>
+            <span v-if="row.isColdStartCandidate" class="new-product-mark">新品</span>
+          </template>
+          <template #cell-product_status="{ row }">
+            <span :class="row.isColdStartCandidate ? 'status-chip status-new' : 'status-chip'">
+              {{ row.isColdStartCandidate ? '待评估' : row.product_status }}
+            </span>
+          </template>
+          <template #cell-sale_price="{ value }">¥{{ value }}</template>
+          <template #[`cell-scores.composite`]="{ row }">
+            <span style="font-weight:700;font-family:var(--font-mono);">{{ row.scores?.composite }}</span>
+          </template>
+          <template #cell-trendLabel="{ value }">
+            <span :style="{ color: value?.includes('上升') ? 'var(--success)' : value?.includes('下降') ? 'var(--vermillion)' : 'var(--ink-soft)' }">
+              {{ value }}
+            </span>
+          </template>
+        </DataTable>
       </div>
     </div>
 
@@ -428,6 +435,28 @@ const recColumns = [
   background: var(--vermillion-soft);
   color: var(--vermillion);
   font-weight: 700;
+}
+
+.cold-feedback-card {
+  border-color: var(--vermillion);
+}
+
+.cold-loading {
+  border: 1px solid var(--rule-soft);
+  border-left: 4px solid var(--vermillion);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cold-loading strong {
+  font-size: 15px;
+}
+
+.cold-loading span {
+  color: var(--ink-soft);
+  font-size: 13px;
 }
 
 .cold-grid {
