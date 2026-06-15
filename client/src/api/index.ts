@@ -101,6 +101,15 @@ export const liveReviewsAPI = {
   anchor: (id: string) => api.get(`/live-reviews/${id}/anchor`),
 }
 
+// Anchor Product Planning API
+export const anchorProductPlanningAPI = {
+  fits: (params?: any) => api.get('/anchor-product-planning/fits', { params }),
+  generateForProduct: (productId: string, data?: any) => api.post(`/anchor-product-planning/fits/product/${productId}`, data),
+  generateForAnchor: (anchorId: string, data?: any) => api.post(`/anchor-product-planning/fits/anchor/${anchorId}`, data),
+  createPlan: (liveId: string, data?: any) => api.post(`/anchor-product-planning/plans/${liveId}`, data),
+  getPlan: (id: string) => api.get(`/anchor-product-planning/plans/${id}`),
+}
+
 // Scripts API
 export const scriptsAPI = {
   list: (params?: any) => api.get('/scripts', { params }),

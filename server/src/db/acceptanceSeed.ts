@@ -378,6 +378,7 @@ async function insertBatches(knex: Knex, table: string, rows: any[], batchSize =
 export async function seedAcceptanceData(knex: Knex) {
   const data = buildAcceptancePreview();
   const clearOrder = [
+    'LivePlanItem', 'LivePlan', 'AnchorProductFit',
     'LiveSessionMetrics', 'ProductReview', 'LiveSessionReview',
     'UserBehaviorStat', 'InterfaceLog', 'OperationReport', 'KPIIndicator',
     'PurchaseSuggestion', 'ProductPerformance', 'AnchorPerformance', 'AfterSale',

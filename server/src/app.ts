@@ -19,6 +19,7 @@ import afterSalesRoutes from './routes/afterSales';
 import reportsRoutes from './routes/reports';
 import interfaceLogsRoutes from './routes/interfaceLogs';
 import liveReviewsRoutes from './routes/liveReviews';
+import anchorProductPlanningRoutes from './routes/anchorProductPlanning';
 
 const app = express();
 
@@ -44,6 +45,7 @@ app.use('/api/after-sales', afterSalesRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/interface-logs', interfaceLogsRoutes);
 app.use('/api/live-reviews', liveReviewsRoutes);
+app.use('/api/anchor-product-planning', anchorProductPlanningRoutes);
 
 app.use(errorHandler);
 

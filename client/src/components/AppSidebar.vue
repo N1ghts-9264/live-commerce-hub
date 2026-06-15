@@ -13,6 +13,7 @@ const menuItems = computed(() => {
     { path: '/live-sessions', label: '直播场次', icon: 'video', roles: ['运营人员', '管理层', '系统管理员'] },
     { path: '/live-reviews', label: '\u76f4\u64ad\u590d\u76d8', icon: 'clipboard-check', roles: ['运营人员', '管理层', '主播', '系统管理员'] },
     { path: '/selection', label: '选品分析', icon: 'target', roles: ['运营人员', '管理层', '采购人员', '系统管理员'] },
+    { path: '/anchor-product-planning', label: '主播适配', icon: 'git-compare', roles: ['运营人员', '管理层', '主播', '系统管理员'] },
     { path: '/products', label: '商品管理', icon: 'package', roles: ['运营人员', '管理层', '采购人员', '系统管理员'] },
     { path: '/anchors', label: '主播管理', icon: 'users', roles: ['运营人员', '管理层', '系统管理员'] },
     { path: '/inventory', label: '库存管理', icon: 'warehouse', roles: ['仓储人员', '管理层', '采购人员', '系统管理员'] },

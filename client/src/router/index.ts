@@ -63,6 +63,12 @@ const router = createRouter({
       meta: { title: '选品分析' },
     },
     {
+      path: '/anchor-product-planning',
+      name: 'AnchorProductPlanning',
+      component: () => import('../pages/AnchorProductPlanningPage.vue'),
+      meta: { title: '主播适配' },
+    },
+    {
       path: '/reports',
       name: 'Reports',
       component: () => import('../pages/ReportsPage.vue'),
