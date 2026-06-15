@@ -2,7 +2,14 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import PageHeader from '../components/PageHeader.vue'
-import { liveReviewsAPI, liveSessionsAPI } from '../api'
+import api, { liveSessionsAPI } from '../api'
+import { isEndedLiveStatus } from '../utils/liveNavigation'
+
+const reviewRequests = {
+  list: () => api.get('/live-reviews'),
+  generate: (liveId: string) => api.post(`/live-reviews/generate/${liveId}`),
+  get: (id: string) => api.get(`/live-reviews/${id}`),
+}
 
 const route = useRoute()
 const endedSessions = ref<any[]>([])
@@ -35,15 +42,15 @@ function ordinal(index: number | string) {
 }
 
 async function loadSessions() {
-  const { data } = await liveSessionsAPI.list({ status: '已结束', pageSize: 100 })
-  endedSessions.value = data.data || []
+  const { data } = await liveSessionsAPI.list({ pageSize: 100 })
+  endedSessions.value = (data.data || []).filter((session: any) => isEndedLiveStatus(session.live_status))
   if (!selectedLiveId.value && endedSessions.value.length > 0) {
     selectedLiveId.value = endedSessions.value[0].live_id
   }
 }
 
 async function loadReviews() {
-  const { data } = await liveReviewsAPI.list()
+  const { data } = await reviewRequests.list()
   reviews.value = data || []
   const queryLiveId = route.query.liveId as string | undefined
   if (queryLiveId) {
@@ -64,7 +71,7 @@ async function generateReview() {
   generating.value = true
   errorMessage.value = ''
   try {
-    const { data } = await liveReviewsAPI.generate(selectedLiveId.value)
+    const { data } = await reviewRequests.generate(selectedLiveId.value)
     selectedReview.value = data
     await loadReviews()
   } catch (error: any) {
@@ -77,7 +84,7 @@ async function generateReview() {
 async function openReview(review: any) {
   errorMessage.value = ''
   try {
-    const { data } = await liveReviewsAPI.get(review.review_id)
+    const { data } = await reviewRequests.get(review.review_id)
     selectedReview.value = data
     selectedLiveId.value = data.live_id
   } catch (error: any) {
