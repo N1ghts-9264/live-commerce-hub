@@ -69,6 +69,12 @@ const router = createRouter({
       meta: { title: '运营报告' },
     },
     {
+      path: '/live-reviews',
+      name: 'LiveReviews',
+      component: () => import('../pages/LiveReviewPage.vue'),
+      meta: { title: '\u76f4\u64ad\u590d\u76d8' },
+    },
+    {
       path: '/after-sales',
       name: 'AfterSales',
       component: () => import('../pages/AfterSalePage.vue'),

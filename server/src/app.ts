@@ -18,6 +18,7 @@ import anchorPerformanceRoutes from './routes/anchorPerformance';
 import afterSalesRoutes from './routes/afterSales';
 import reportsRoutes from './routes/reports';
 import interfaceLogsRoutes from './routes/interfaceLogs';
+import liveReviewsRoutes from './routes/liveReviews';
 
 const app = express();
 
@@ -42,6 +43,7 @@ app.use('/api/anchor-performance', anchorPerformanceRoutes);
 app.use('/api/after-sales', afterSalesRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/interface-logs', interfaceLogsRoutes);
+app.use('/api/live-reviews', liveReviewsRoutes);
 
 app.use(errorHandler);
 

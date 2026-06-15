@@ -92,6 +92,15 @@ export const liveSessionsAPI = {
   getStreamUrl: (id: string) => `/api/live-sessions/stream/${id}`,
 }
 
+// Live Review API
+export const liveReviewsAPI = {
+  list: () => api.get('/live-reviews'),
+  generate: (liveId: string) => api.post(`/live-reviews/generate/${liveId}`),
+  get: (id: string) => api.get(`/live-reviews/${id}`),
+  products: (id: string) => api.get(`/live-reviews/${id}/products`),
+  anchor: (id: string) => api.get(`/live-reviews/${id}/anchor`),
+}
+
 // Scripts API
 export const scriptsAPI = {
   list: (params?: any) => api.get('/scripts', { params }),

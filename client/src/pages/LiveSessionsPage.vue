@@ -57,6 +57,10 @@ async function save() {
 }
 
 function goMonitor(session: LiveSession) {
+  if (session.live_status === '\u5df2\u7ed3\u675f') {
+    router.push(`/live-reviews?liveId=${session.live_id}`)
+    return
+  }
   router.push(`/monitor?id=${session.live_id}`)
 }
 
@@ -137,7 +141,7 @@ const categories = ['女装', '美妆', '箱包', '运动户外', '零食', '家
         <button v-if="row.live_status === '已排期' || row.live_status === '进行中'" class="btn small primary" @click.stop="goMonitor(row)">
           {{ row.live_status === '进行中' ? '监控中' : '开启直播' }}
         </button>
-        <button v-else class="btn small" disabled>已结束</button>
+        <button v-else class="btn small" @click.stop="goMonitor(row)">查看复盘</button>
       </template>
     </DataTable>
 

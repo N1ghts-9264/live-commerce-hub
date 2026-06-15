@@ -10,7 +10,7 @@
     "migrate:rollback": "knex migrate:rollback --knexfile src/db/knexfile.ts",
     "seed": "tsx run-seed.ts",
     "seed:acceptance": "tsx run-acceptance-seed.ts",
-    "test:acceptance": "tsx src/services/selectionEngine.test.ts && tsx src/services/inventoryPlanning.test.ts && tsx src/services/liveSimulator.test.ts && tsx src/db/acceptanceSeed.test.ts"
+    "test:acceptance": "tsx src/services/selectionEngine.test.ts && tsx src/services/inventoryPlanning.test.ts && tsx src/services/liveSimulator.test.ts && tsx src/services/liveReviewEngine.test.ts && tsx src/db/acceptanceSeed.test.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
