@@ -68,6 +68,22 @@ function connectSSE() {
   eventSource.value = es
 
   es.addEventListener('connected', () => { connected.value = true })
+  es.addEventListener('snapshot', (e) => {
+    const snapshot = JSON.parse(e.data)
+    const nextMetrics = snapshot.metrics || metrics.value
+    simulationStartMs.value = Date.now() - (Number(nextMetrics.duration) || 0) * 1000
+    metrics.value = { ...nextMetrics, duration: secondsSince(simulationStartMs.value) }
+    orders.value = Array.isArray(snapshot.orders) ? snapshot.orders : []
+    chats.value = Array.isArray(snapshot.chats) ? snapshot.chats : []
+    sentiment.value = snapshot.sentiment || sentiment.value
+    currentProduct.value = snapshot.currentProduct || currentProduct.value
+    insight.value = snapshot.insight || insight.value
+    scriptRecommendation.value = snapshot.scriptRecommendation || scriptRecommendation.value
+    timeLabels.value = Array.isArray(snapshot.series?.labels) ? snapshot.series.labels : []
+    onlineHistory.value = Array.isArray(snapshot.series?.online) ? snapshot.series.online : []
+    gmvHistory.value = Array.isArray(snapshot.series?.gmv) ? snapshot.series.gmv : []
+    startLocalTimer()
+  })
   es.addEventListener('metrics', (e) => {
     const nextMetrics = JSON.parse(e.data)
     if (!simulationStartMs.value) simulationStartMs.value = Date.now() - (Number(nextMetrics.duration) || 0) * 1000

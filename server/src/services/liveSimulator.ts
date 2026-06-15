@@ -11,6 +11,23 @@ interface ProductSKU {
   sku_name: string;
 }
 
+export interface SimulatorSnapshotState {
+  online: number;
+  totalOrders: number;
+  gmv: number;
+  peakOnline: number;
+  duration: number;
+  currentProduct: { product_name: string; price: number } | null;
+  recentOrders: any[];
+  recentChats: any[];
+  sentiment: { positive: number; neutral: number; negative: number };
+  onlineHistory: number[];
+  gmvHistory: number[];
+  timeLabels: string[];
+  insight?: any | null;
+  scriptRecommendation?: any | null;
+}
+
 interface SimulatorState {
   liveId: string;
   running: boolean;
@@ -27,10 +44,18 @@ interface SimulatorState {
   sentimentCounts: { positive: number; neutral: number; negative: number };
   category: string;
   productSkus: ProductSKU[];  // Pre-loaded SKUs for this session's category
-  currentProduct: ProductSKU;
+  currentProduct: ProductSKU | undefined;
   productIndex: number;
   productSwitchTime: number;
   recentChats: string[];
+  recentChatEvents: any[];
+  recentOrderEvents: any[];
+  onlineHistory: number[];
+  gmvHistory: number[];
+  timeLabels: string[];
+  lastSentimentStats: { positive: number; neutral: number; negative: number };
+  lastInsight: any | null;
+  lastScriptRecommendation: any | null;
 }
 
 const sessions: Map<string, SimulatorState> = new Map();
@@ -43,19 +68,99 @@ export function getSimulator(liveId: string) {
 export function addSSEClient(liveId: string, res: any) {
   if (!sseClients.has(liveId)) sseClients.set(liveId, new Set());
   sseClients.get(liveId)!.add(res);
+  const state = sessions.get(liveId);
+  if (state) sendEvent(res, 'snapshot', getSnapshot(state));
 }
 
 export function removeSSEClient(liveId: string, res: any) {
   sseClients.get(liveId)?.delete(res);
 }
 
+function sendEvent(res: any, event: string, data: any) {
+  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  res.write(payload);
+}
+
 function broadcast(liveId: string, event: string, data: any) {
   const clients = sseClients.get(liveId);
   if (!clients) return;
-  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
   for (const res of clients) {
-    try { res.write(payload); } catch { /* client disconnected */ }
+    try { sendEvent(res, event, data); } catch { /* client disconnected */ }
   }
+}
+
+function remember<T>(items: T[], item: T, max: number) {
+  items.unshift(item);
+  if (items.length > max) items.pop();
+}
+
+function pushSeriesPoint(state: SimulatorState) {
+  state.timeLabels.push(new Date().toLocaleTimeString());
+  state.onlineHistory.push(state.online);
+  state.gmvHistory.push(Math.round(state.gmv * 100) / 100);
+  if (state.timeLabels.length > 60) state.timeLabels.shift();
+  if (state.onlineHistory.length > 60) state.onlineHistory.shift();
+  if (state.gmvHistory.length > 60) state.gmvHistory.shift();
+}
+
+export function createWarmupSeries(nowMs: number, seconds: number, baseOnline: number, gmv: number) {
+  const labels: string[] = [];
+  const online: number[] = [];
+  const gmvValues: number[] = [];
+  const points = 6;
+  for (let index = points - 1; index >= 0; index--) {
+    const pointTime = new Date(nowMs - index * (seconds / (points - 1)) * 1000);
+    labels.push(pointTime.toLocaleTimeString());
+    online.push(Math.max(50, Math.round(baseOnline + Math.sin(index + baseOnline) * 120 - index * 18)));
+    gmvValues.push(Math.max(0, Math.round((gmv * (points - index)) / points)));
+  }
+  return { labels, online, gmv: gmvValues };
+}
+
+export function buildSimulatorSnapshot(state: SimulatorSnapshotState) {
+  return {
+    metrics: {
+      online: state.online,
+      totalOrders: state.totalOrders,
+      gmv: Math.round(state.gmv * 100) / 100,
+      peakOnline: state.peakOnline,
+      duration: state.duration,
+    },
+    orders: state.recentOrders,
+    chats: state.recentChats,
+    sentiment: state.sentiment,
+    currentProduct: state.currentProduct,
+    series: {
+      labels: state.timeLabels,
+      online: state.onlineHistory,
+      gmv: state.gmvHistory,
+    },
+    insight: state.insight || null,
+    scriptRecommendation: state.scriptRecommendation || null,
+  };
+}
+
+function getSnapshot(state: SimulatorState) {
+  const total = state.sentimentCounts.positive + state.sentimentCounts.neutral + state.sentimentCounts.negative;
+  const duration = Math.floor((Date.now() - state.startTime.getTime()) / 1000);
+  return buildSimulatorSnapshot({
+    online: state.online,
+    totalOrders: state.totalOrders,
+    gmv: state.gmv,
+    peakOnline: state.peakOnline || state.online,
+    duration,
+    currentProduct: state.currentProduct
+      ? { product_name: state.currentProduct.product_name, price: state.currentProduct.sale_price }
+      : null,
+    recentOrders: state.recentOrderEvents,
+    recentChats: state.recentChatEvents,
+    sentiment: total > 0 ? state.lastSentimentStats : { positive: 1, neutral: 1, negative: 1 },
+    onlineHistory: state.onlineHistory,
+    gmvHistory: state.gmvHistory,
+    timeLabels: state.timeLabels,
+    insight: state.lastInsight,
+    scriptRecommendation: state.lastScriptRecommendation,
+  });
 }
 
 async function loadSessionSKUs(liveId: string, category: string): Promise<ProductSKU[]> {
@@ -68,9 +173,9 @@ async function loadSessionSKUs(liveId: string, category: string): Promise<Produc
       'Product.product_name',
       'Product.sale_price'
     )
-    .where('Product.category', category || '女装')
-    .where('Product.product_status', '在售')
-    .where('SKU.sku_status', '在售')
+    .where('Product.category', category || '\u5973\u88c5')
+    .where('Product.product_status', '\u5728\u552e')
+    .where('SKU.sku_status', '\u5728\u552e')
     .limit(100);
 
   if (rows.length === 0) {
@@ -84,34 +189,44 @@ async function loadSessionSKUs(liveId: string, category: string): Promise<Produc
         'Product.product_name',
         'Product.sale_price'
       )
-      .where('Product.product_status', '在售')
-      .where('SKU.sku_status', '在售')
+      .where('Product.product_status', '\u5728\u552e')
+      .where('SKU.sku_status', '\u5728\u552e')
       .limit(100);
     return fallback;
   }
   return rows;
 }
 
-export async function startSimulation(liveId: string) {
+export async function startSimulation(liveId: string, options: { preloadSeconds?: number; preserveStartTime?: boolean } = {}) {
   if (sessions.has(liveId)) return;
 
   const session = await knex('LiveSession').where('live_id', liveId).first();
   if (!session) throw new Error('Session not found');
 
-  const category = session.live_category || '女装';
+  const category = session.live_category || '\u5973\u88c5';
   const productSkus = await loadSessionSKUs(liveId, category);
   const firstProduct = productSkus[Math.floor(Math.random() * productSkus.length)];
+  const preloadSeconds = options.preloadSeconds ?? 120;
+  const startedAt = options.preserveStartTime && session.start_time
+    ? new Date(session.start_time)
+    : new Date(Date.now() - preloadSeconds * 1000);
+  const baseOnline = 500 + Math.floor(Math.random() * 2000);
+  const online = Math.max(50, baseOnline + Math.floor(Math.random() * 400));
+  const warmupGmv = Math.round((firstProduct?.sale_price || 99) * (2 + Math.floor(Math.random() * 8)));
+  const warmupSeries = createWarmupSeries(Date.now(), preloadSeconds, online, warmupGmv);
+  const warmChats = buildWarmupChats(category, firstProduct);
+  const warmOrders = buildWarmupOrders(firstProduct, warmupGmv);
 
   const state: SimulatorState = {
     liveId,
     running: true,
     interval: null,
-    online: 500 + Math.floor(Math.random() * 2000),
-    baseOnline: 500 + Math.floor(Math.random() * 2000),
-    totalOrders: 0,
-    gmv: 0,
-    peakOnline: 0,
-    startTime: new Date(),
+    online,
+    baseOnline,
+    totalOrders: warmOrders.length,
+    gmv: warmOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0),
+    peakOnline: Math.max(...warmupSeries.online, online),
+    startTime: startedAt,
     pendingChats: [],
     lastAnalysisTime: Date.now(),
     lastInsightTime: Date.now(),
@@ -121,23 +236,79 @@ export async function startSimulation(liveId: string) {
     currentProduct: firstProduct,
     productIndex: 0,
     productSwitchTime: Date.now() + 30000 + Math.random() * 60000,
-    recentChats: [],
+    recentChats: warmChats.map((chat) => chat.content),
+    recentChatEvents: warmChats,
+    recentOrderEvents: warmOrders,
+    onlineHistory: warmupSeries.online,
+    gmvHistory: warmupSeries.gmv,
+    timeLabels: warmupSeries.labels,
+    lastSentimentStats: { positive: 55, neutral: 35, negative: 10 },
+    lastInsight: null,
+    lastScriptRecommendation: null,
   };
 
-  await knex('LiveSession').where('live_id', liveId).update({
-    live_status: '进行中',
-    start_time: new Date(),
-  });
+  const update: any = { live_status: '\u8fdb\u884c\u4e2d' };
+  if (!options.preserveStartTime) update.start_time = startedAt;
+  await knex('LiveSession').where('live_id', liveId).update(update);
 
   sessions.set(liveId, state);
 
   // Send initial current product
   broadcast(liveId, 'current_product', {
-    product_name: firstProduct?.product_name || '热卖商品',
+    product_name: firstProduct?.product_name || '\u70ed\u5356\u5546\u54c1',
     price: firstProduct?.sale_price || 99,
   });
 
   state.interval = setInterval(() => tick(state), 2000 + Math.random() * 3000);
+}
+
+function buildWarmupChats(category: string, product?: ProductSKU) {
+  const templates = [...getChatsForCategory(category), ...genericChats];
+  const count = 12;
+  return Array.from({ length: count }, (_, index) => {
+    let content = templates[index % templates.length] || '\u5e93\u5b58\u8fd8\u6709\u5417';
+    if (product && index % 4 === 0) content = content.replace(/\u8fd9\u4e2a|\u4ea7\u54c1/g, product.product_name.substring(0, 6));
+    return {
+      id: uuid().replace(/-/g, '').substring(0, 16),
+      userId: '',
+      nickname: `\u89c2\u4f17${String(index + 1).padStart(2, '0')}`,
+      content,
+      type: '\u5f39\u5e55',
+      sentiment: null,
+      time: new Date(Date.now() - (count - index) * 5000).toISOString(),
+    };
+  });
+}
+
+function buildWarmupOrders(product?: ProductSKU, gmv = 0) {
+  if (!product) return [];
+  const count = Math.max(2, Math.min(8, Math.round(gmv / (Number(product.sale_price) || 99))));
+  return Array.from({ length: count }, (_, index) => ({
+    orderId: uuid().replace(/-/g, '').substring(0, 16),
+    userId: '',
+    nickname: `\u7528\u6237${String(index + 1).padStart(2, '0')}`,
+    productName: product.product_name?.substring(0, 10),
+    skuName: product.sku_name?.substring(0, 10),
+    amount: Number(product.sale_price) || 99,
+    time: new Date(Date.now() - (count - index) * 9000).toISOString(),
+  }));
+}
+
+export async function startActiveSimulations() {
+  const activeSessions = await knex('LiveSession')
+    .select('live_id')
+    .where('live_status', '\u8fdb\u884c\u4e2d')
+    .limit(20);
+  for (const session of activeSessions) {
+    try {
+      await startSimulation(session.live_id, { preloadSeconds: 180, preserveStartTime: true });
+    } catch (error) {
+      console.error(`[LiveCommerceHub] Failed to preload live simulation ${session.live_id}`, error);
+    }
+  }
+  if (activeSessions.length > 0) {
+    console.log(`[LiveCommerceHub] Preloaded ${activeSessions.length} active live simulation(s)`);
+  }
 }
 
 export async function stopSimulation(liveId: string) {
@@ -155,7 +326,7 @@ export async function stopSimulation(liveId: string) {
     .first();
 
   await knex('LiveSession').where('live_id', liveId).update({
-    live_status: '已结束',
+    live_status: '\u5df2\u7ed3\u675f',
     end_time: new Date(),
     online_peak: state.peakOnline || state.online,
     total_sales: orderStats?.total || state.gmv,
@@ -204,8 +375,8 @@ async function tick(state: SimulatorState) {
         discount_amount: discount,
         order_quantity: 1,
         order_amount: amount > 0 ? amount : salePrice,
-        payment_status: '已支付',
-        order_status: '已完成',
+        payment_status: '\u5df2\u652f\u4ed8',
+        order_status: '\u5df2\u5b8c\u6210',
         order_time: new Date(),
       });
       state.totalOrders++;
@@ -214,7 +385,7 @@ async function tick(state: SimulatorState) {
       await knex('SKU').where('sku_id', sku.sku_id).decrement('stock_quantity', 1);
       await knex('SKU').where('sku_id', sku.sku_id).increment('sales_volume', 1);
 
-      broadcast(state.liveId, 'order', {
+      const orderEvent = {
         orderId,
         userId: user.user_id,
         nickname: user.nickname,
@@ -222,7 +393,9 @@ async function tick(state: SimulatorState) {
         skuName: sku.sku_name?.substring(0, 10),
         amount: amount > 0 ? amount : salePrice,
         time: new Date().toISOString(),
-      });
+      };
+      remember(state.recentOrderEvents, orderEvent, 50);
+      broadcast(state.liveId, 'order', orderEvent);
     }
   }
 
@@ -235,7 +408,7 @@ async function tick(state: SimulatorState) {
 
     // Inject product name occasionally
     if (Math.random() < 0.15 && state.currentProduct) {
-      content = content.replace(/这个|产品/g, state.currentProduct.product_name?.substring(0, 6) || '这个');
+      content = content.replace(/\u8fd9\u4e2a|\u4ea7\u54c1/g, state.currentProduct.product_name?.substring(0, 6) || '\u8fd9\u4e2a');
     }
 
     const chatId = uuid().replace(/-/g, '').substring(0, 16);
@@ -245,25 +418,27 @@ async function tick(state: SimulatorState) {
       interaction_id: chatId,
       live_id: state.liveId,
       user_id: user?.user_id || null,
-      interaction_type: '弹幕',
+      interaction_type: '\u5f39\u5e55',
       interaction_content: content,
       interaction_time: new Date(),
-      analysis_status: '待分析',
+      analysis_status: '\u5f85\u5206\u6790',
     });
 
     state.pendingChats.push({ id: chatId, content });
     state.recentChats.push(content);
     if (state.recentChats.length > 20) state.recentChats.shift();
 
-    broadcast(state.liveId, 'chat', {
+    const chatEvent = {
       id: chatId,
       userId: user?.user_id || '',
-      nickname: user?.nickname || '匿名用户',
+      nickname: user?.nickname || '\u533f\u540d\u7528\u6237',
       content,
-      type: '弹幕',
+      type: '\u5f39\u5e55',
       sentiment: null,
       time: new Date().toISOString(),
-    });
+    };
+    remember(state.recentChatEvents, chatEvent, 100);
+    broadcast(state.liveId, 'chat', chatEvent);
   }
 
   // 5. Trigger LLM analysis
@@ -272,8 +447,8 @@ async function tick(state: SimulatorState) {
     const results = await analyzeChatBatch(batch);
 
     for (const r of results) {
-      if (r.sentiment === '正面') state.sentimentCounts.positive++;
-      else if (r.sentiment === '负面') state.sentimentCounts.negative++;
+      if (r.sentiment === '\u6b63\u9762') state.sentimentCounts.positive++;
+      else if (r.sentiment === '\u8d1f\u9762') state.sentimentCounts.negative++;
       else state.sentimentCounts.neutral++;
 
       await knex('InteractionLog').where('interaction_id', r.id).update({
@@ -281,7 +456,7 @@ async function tick(state: SimulatorState) {
         semantic_label: r.semantic_label,
         purchase_intention: r.purchase_intention,
         confidence_score: r.confidence,
-        analysis_status: '已分析',
+        analysis_status: '\u5df2\u5206\u6790',
       });
     }
 
@@ -293,16 +468,23 @@ async function tick(state: SimulatorState) {
     };
 
     state.lastAnalysisTime = now;
+    state.lastSentimentStats = sentimentStats;
     broadcast(state.liveId, 'sentiment', sentimentStats);
 
     // Check signal triggers
     const recentText = state.recentChats.join('; ');
-    if (recentText.includes('贵') || recentText.includes('便宜') || recentText.includes('价格')) {
-      const script = await recommendScript('价格质疑', state.currentProduct?.product_name || '热卖商品', state.currentProduct?.sale_price || 99, recentText, sentimentStats);
-      if (script) broadcast(state.liveId, 'script_recommendation', { trigger: '价格质疑', scriptSnippet: script, reason: '检测到价格相关讨论增多' });
+    if (recentText.includes('\u8d35') || recentText.includes('\u4fbf\u5b9c') || recentText.includes('\u4ef7\u683c')) {
+      const script = await recommendScript('\u4ef7\u683c\u8d28\u7591', state.currentProduct?.product_name || '\u70ed\u5356\u5546\u54c1', state.currentProduct?.sale_price || 99, recentText, sentimentStats);
+      if (script) {
+        state.lastScriptRecommendation = { trigger: '\u4ef7\u683c\u8d28\u7591', scriptSnippet: script, reason: '\u68c0\u6d4b\u5230\u4ef7\u683c\u76f8\u5173\u8ba8\u8bba\u589e\u591a' };
+        broadcast(state.liveId, 'script_recommendation', state.lastScriptRecommendation);
+      }
     } else if (sentimentStats.negative > 35) {
-      const script = await recommendScript('负面情绪', state.currentProduct?.product_name || '热卖商品', state.currentProduct?.sale_price || 99, recentText, sentimentStats);
-      if (script) broadcast(state.liveId, 'script_recommendation', { trigger: '负面情绪', scriptSnippet: script, reason: '负面情绪占比超过35%' });
+      const script = await recommendScript('\u8d1f\u9762\u60c5\u7eea', state.currentProduct?.product_name || '\u70ed\u5356\u5546\u54c1', state.currentProduct?.sale_price || 99, recentText, sentimentStats);
+      if (script) {
+        state.lastScriptRecommendation = { trigger: '\u8d1f\u9762\u60c5\u7eea', scriptSnippet: script, reason: '\u8d1f\u9762\u60c5\u7eea\u5360\u6bd4\u8d85\u8fc735%' };
+        broadcast(state.liveId, 'script_recommendation', state.lastScriptRecommendation);
+      }
     }
   }
 
@@ -316,10 +498,12 @@ async function tick(state: SimulatorState) {
       negative: Math.round((state.sentimentCounts.negative / total) * 100),
     });
     state.lastInsightTime = now;
-    broadcast(state.liveId, 'llm_insight', { ...insight, timestamp: new Date().toISOString() });
+    state.lastInsight = { ...insight, timestamp: new Date().toISOString() };
+    broadcast(state.liveId, 'llm_insight', state.lastInsight);
   }
 
   // 7. Push metrics
+  pushSeriesPoint(state);
   broadcast(state.liveId, 'metrics', {
     online: state.online,
     totalOrders: state.totalOrders,

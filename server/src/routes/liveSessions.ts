@@ -2,27 +2,39 @@ import { Router, Request, Response } from 'express';
 import { v4 as uuid } from 'uuid';
 import knex from '../db/knex';
 import { authenticate } from '../middleware/auth';
-import { addSSEClient, removeSSEClient, startSimulation, stopSimulation } from '../services/liveSimulator';
+import { addSSEClient, getSimulator, removeSSEClient, startSimulation, stopSimulation } from '../services/liveSimulator';
 
 const router = Router();
 router.use(authenticate);
 
 // SSE stream endpoint (must be before /:id)
-router.get('/stream/:id', (req: Request, res: Response) => {
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-    'Access-Control-Allow-Origin': '*',
-  });
+router.get('/stream/:id', async (req: Request, res: Response) => {
+  try {
+    const liveId = req.params.id;
+    if (!getSimulator(liveId)) {
+      const session = await knex('LiveSession').where('live_id', liveId).first();
+      if (session?.live_status === '\u8fdb\u884c\u4e2d') {
+        await startSimulation(liveId, { preloadSeconds: 120, preserveStartTime: true });
+      }
+    }
 
-  res.write(`event: connected\ndata: {"status":"connected","liveId":"${req.params.id}"}\n\n`);
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+    });
 
-  addSSEClient(req.params.id, res);
+    res.write(`event: connected\ndata: {"status":"connected","liveId":"${liveId}"}\n\n`);
 
-  req.on('close', () => {
-    removeSSEClient(req.params.id, res);
-  });
+    addSSEClient(liveId, res);
+
+    req.on('close', () => {
+      removeSSEClient(liveId, res);
+    });
+  } catch (err: any) {
+    if (!res.headersSent) res.status(500).json({ message: err.message });
+  }
 });
 
 // GET /api/live-sessions
