@@ -7,6 +7,7 @@ import PageHeader from '../components/PageHeader.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import DataTable from '../components/DataTable.vue'
 import Pagination from '../components/Pagination.vue'
+import { getLiveSessionTargetPath, isEndedLiveStatus } from '../utils/liveNavigation'
 
 const router = useRouter()
 const sessions = ref<(LiveSession & Record<string, any>)[]>([])
@@ -57,11 +58,7 @@ async function save() {
 }
 
 function goMonitor(session: LiveSession) {
-  if (session.live_status === '\u5df2\u7ed3\u675f') {
-    router.push(`/live-reviews?liveId=${session.live_id}`)
-    return
-  }
-  router.push(`/monitor?id=${session.live_id}`)
+  router.push(getLiveSessionTargetPath(session))
 }
 
 const statusMeta: Record<string, { label: string; hint: string; className: string }> = {
@@ -138,7 +135,7 @@ const categories = ['女装', '美妆', '箱包', '运动户外', '零食', '家
       <template #cell-online_peak="{ value }">{{ value?.toLocaleString() || '-' }}</template>
       <template #cell-total_sales="{ value }">{{ formatPrice(value) }}</template>
       <template #cell-actions="{ row }">
-        <button v-if="row.live_status === '已排期' || row.live_status === '进行中'" class="btn small primary" @click.stop="goMonitor(row)">
+        <button v-if="!isEndedLiveStatus(row.live_status)" class="btn small primary" @click.stop="goMonitor(row)">
           {{ row.live_status === '进行中' ? '监控中' : '开启直播' }}
         </button>
         <button v-else class="btn small" @click.stop="goMonitor(row)">查看复盘</button>

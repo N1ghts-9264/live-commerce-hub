@@ -11,6 +11,7 @@ const selectedLiveId = ref('')
 const selectedReview = ref<any>(null)
 const loading = ref(false)
 const generating = ref(false)
+const errorMessage = ref('')
 
 function currency(value: number) {
   const n = Number(value || 0)
@@ -61,25 +62,36 @@ async function loadReviews() {
 async function generateReview() {
   if (!selectedLiveId.value) return
   generating.value = true
+  errorMessage.value = ''
   try {
     const { data } = await liveReviewsAPI.generate(selectedLiveId.value)
     selectedReview.value = data
     await loadReviews()
+  } catch (error: any) {
+    errorMessage.value = error.response?.data?.message || error.message || '生成复盘失败，请确认后端服务已重启并完成数据库迁移。'
   } finally {
     generating.value = false
   }
 }
 
 async function openReview(review: any) {
-  const { data } = await liveReviewsAPI.get(review.review_id)
-  selectedReview.value = data
-  selectedLiveId.value = data.live_id
+  errorMessage.value = ''
+  try {
+    const { data } = await liveReviewsAPI.get(review.review_id)
+    selectedReview.value = data
+    selectedLiveId.value = data.live_id
+  } catch (error: any) {
+    errorMessage.value = error.response?.data?.message || error.message || '读取复盘失败。'
+  }
 }
 
 async function load() {
   loading.value = true
+  errorMessage.value = ''
   try {
     await Promise.all([loadSessions(), loadReviews()])
+  } catch (error: any) {
+    errorMessage.value = error.response?.data?.message || error.message || '加载复盘数据失败，请确认后端服务已重启并完成数据库迁移。'
   } finally {
     loading.value = false
   }
@@ -120,6 +132,9 @@ onMounted(load)
   <div class="page-body">
     <div class="review-shell">
       <aside class="review-aside">
+        <div v-if="errorMessage" class="review-error">
+          {{ errorMessage }}
+        </div>
         <div class="card">
           <div class="card-header">
             <span class="card-title">生成复盘</span>
@@ -297,6 +312,15 @@ onMounted(load)
 .review-aside {
   display: grid;
   gap: 18px;
+}
+
+.review-error {
+  border: 1px solid var(--vermillion);
+  background: var(--vermillion-soft);
+  color: var(--vermillion);
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .review-generate {
