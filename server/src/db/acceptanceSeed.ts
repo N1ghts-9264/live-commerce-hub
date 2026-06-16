@@ -154,7 +154,7 @@ export function buildAcceptancePreview() {
 
   const liveSessions = Array.from({ length: 120 }, (_, index) => {
     const anchor = anchors[index % anchors.length];
-    const status = index < 108 ? '已结束' : (index < 114 ? '进行中' : '已排期');
+    const status = index < 96 ? '已结束' : (index < 102 ? '进行中' : (index < 111 ? '已排期' : '待安排'));
     const start = day(index - 78);
     return {
       live_id: id('LIVE', index + 1),
@@ -165,8 +165,8 @@ export function buildAcceptancePreview() {
       platform: anchor.account_platform,
       live_category: anchor.specialization,
       live_status: status,
-      online_peak: status === '已排期' ? null : 1800 + (index % 30) * 420,
-      total_sales: status === '已排期' ? 0 : money(18000 + (index % 24) * 5200),
+      online_peak: ['已排期', '待安排'].includes(status) ? null : 1800 + (index % 30) * 420,
+      total_sales: ['已排期', '待安排'].includes(status) ? 0 : money(18000 + (index % 24) * 5200),
     };
   });
 

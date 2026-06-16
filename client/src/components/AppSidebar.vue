@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { systemAPI } from '../api'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
+const resetting = ref(false)
 
 const menuItems = computed(() => {
   const allItems = [
@@ -31,6 +33,26 @@ function navigate(path: string) {
 
 function isActive(path: string) {
   return route.path === path || route.path.startsWith(path + '/')
+}
+
+async function resetSystem() {
+  if (resetting.value) return
+  const confirmed = window.confirm('确定要复位系统数据吗？当前模拟数据会恢复到验收初始状态。')
+  if (!confirmed) return
+
+  resetting.value = true
+  try {
+    const { data } = await systemAPI.reset()
+    const counts = data?.counts
+      ? `\n直播场次 ${data.counts.liveSessions}，商品 ${data.counts.products}，主播 ${data.counts.anchors}`
+      : ''
+    window.alert(`${data?.message || '系统已复位'}${counts}`)
+    window.location.reload()
+  } catch (e: any) {
+    window.alert(e.response?.data?.message || '系统复位失败')
+  } finally {
+    resetting.value = false
+  }
 }
 
 const roleLabels: Record<string, string> = {
@@ -73,6 +95,9 @@ const roleLabels: Record<string, string> = {
       </div>
       <button class="btn small" style="margin-left:auto;" @click="auth.logout(); router.push('/login')">
         退出
+      </button>
+      <button class="btn small reset-btn" :disabled="resetting" @click="resetSystem">
+        {{ resetting ? '复位中' : '复位' }}
       </button>
     </div>
   </aside>
@@ -124,6 +149,7 @@ const roleLabels: Record<string, string> = {
   padding: 16px 24px; border-top: 1px solid var(--rule);
   display: flex; align-items: center; gap: 10px;
   font-size: 13px; color: var(--ink-soft);
+  flex-wrap: wrap;
 }
 .avatar {
   width: 32px; height: 32px; border-radius: 2px;
@@ -131,5 +157,10 @@ const roleLabels: Record<string, string> = {
   display: flex; align-items: center; justify-content: center;
   font-family: var(--font-mono); font-size: 11px; font-weight: 600;
   flex-shrink: 0;
+}
+.reset-btn {
+  width: 100%;
+  border-color: rgba(188, 125, 43, 0.45);
+  color: var(--warning);
 }
 </style>

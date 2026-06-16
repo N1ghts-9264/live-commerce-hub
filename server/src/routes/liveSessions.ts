@@ -92,7 +92,7 @@ router.post('/', async (req: Request, res: Response) => {
       live_id: id,
       ...req.body,
       start_time: req.body.start_time ? new Date(req.body.start_time) : null,
-      live_status: req.body.live_status || '已排期',
+      live_status: req.body.live_status || '待安排',
     };
     await knex('LiveSession').insert(session);
     return res.status(201).json(session);

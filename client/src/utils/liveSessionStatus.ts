@@ -1,4 +1,4 @@
-export const LIVE_SESSION_STATUS_ORDER = ['进行中', '已排期', '已结束'] as const
+export const LIVE_SESSION_STATUS_ORDER = ['待安排', '已排期', '进行中', '已结束'] as const
 
 export type LiveSessionStatusName = typeof LIVE_SESSION_STATUS_ORDER[number]
 

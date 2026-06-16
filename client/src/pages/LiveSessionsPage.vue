@@ -7,7 +7,7 @@ import PageHeader from '../components/PageHeader.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import DataTable from '../components/DataTable.vue'
 import Pagination from '../components/Pagination.vue'
-import { getLiveSessionTargetPath, isEndedLiveStatus } from '../utils/liveNavigation'
+import { getLiveSessionTargetPath } from '../utils/liveNavigation'
 import { LIVE_SESSION_STATUS_ORDER, countLiveSessionStatuses, nextStatusFilter } from '../utils/liveSessionStatus'
 
 const router = useRouter()
@@ -24,7 +24,7 @@ let loadRequestId = 0
 const showModal = ref(false)
 const form = ref({
   anchor_id: '', live_title: '', platform: '抖音',
-  live_category: '女装', start_time: '', live_status: '已排期',
+  live_category: '女装', start_time: '', live_status: '待安排',
 })
 
 async function load() {
@@ -71,7 +71,7 @@ function openCreate() {
     anchor_id: anchors.value[0]?.anchor_id || '',
     live_title: '', platform: '抖音', live_category: '女装',
     start_time: new Date(now.getTime() + 3600000).toISOString().slice(0, 16),
-    live_status: '已排期',
+    live_status: '待安排',
   }
   showModal.value = true
 }
@@ -84,11 +84,23 @@ async function save() {
   } catch (e: any) { alert(e.response?.data?.message || '保存失败') }
 }
 
-function goMonitor(session: LiveSession) {
+function goSession(session: LiveSession) {
+  if (session.live_status === '待安排') {
+    router.push(`/live-planning?liveId=${session.live_id}`)
+    return
+  }
   router.push(getLiveSessionTargetPath(session))
 }
 
+function getActionLabel(status: string) {
+  if (status === '待安排') return '安排场次'
+  if (status === '已排期') return '开启直播'
+  if (status === '进行中') return '监控中'
+  return '查看复盘'
+}
+
 const statusMeta: Record<string, { label: string; hint: string; className: string }> = {
+  '待安排': { label: '待安排', hint: '待生成带货计划', className: 'unplanned' },
   '进行中': { label: '进行中', hint: '可进入实时监控', className: 'live' },
   '已排期': { label: '已排期', hint: '等待开播', className: 'scheduled' },
   '已结束': { label: '已结束', hint: '可查看复盘数据', className: 'ended' },
@@ -131,6 +143,7 @@ const categories = ['女装', '美妆', '箱包', '运动户外', '零食', '家
     <div class="toolbar">
       <select v-model="statusFilter" class="form-select" style="width:auto;" @change="onStatusSelectChange">
         <option value="">全部状态</option>
+        <option value="待安排">待安排</option>
         <option value="已排期">已排期</option>
         <option value="进行中">进行中</option>
         <option value="已结束">已结束</option>
@@ -154,7 +167,7 @@ const categories = ['女装', '美妆', '箱包', '运动户外', '零食', '家
       </button>
     </div>
 
-    <DataTable :columns="columns" :data="sessions" :loading="loading" :row-class="getSessionRowClass" @row-click="goMonitor">
+    <DataTable :columns="columns" :data="sessions" :loading="loading" :row-class="getSessionRowClass" @row-click="goSession">
       <template #cell-start_time="{ value }">{{ formatDate(value) }}</template>
       <template #cell-live_status="{ value }">
         <StatusBadge :status="value" />
@@ -162,10 +175,13 @@ const categories = ['女装', '美妆', '箱包', '运动户外', '零食', '家
       <template #cell-online_peak="{ value }">{{ value?.toLocaleString() || '-' }}</template>
       <template #cell-total_sales="{ value }">{{ formatPrice(value) }}</template>
       <template #cell-actions="{ row }">
-        <button v-if="!isEndedLiveStatus(row.live_status)" class="btn small primary" @click.stop="goMonitor(row)">
-          {{ row.live_status === '进行中' ? '监控中' : '开启直播' }}
+        <button
+          class="btn small"
+          :class="{ primary: row.live_status !== '已结束' }"
+          @click.stop="goSession(row)"
+        >
+          {{ getActionLabel(row.live_status) }}
         </button>
-        <button v-else class="btn small" @click.stop="goMonitor(row)">查看复盘</button>
       </template>
     </DataTable>
 
@@ -215,7 +231,7 @@ const categories = ['女装', '美妆', '箱包', '运动户外', '零食', '家
 <style scoped>
 .status-strip {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
   margin-bottom: 20px;
 }
@@ -260,6 +276,11 @@ const categories = ['女装', '美妆', '箱包', '运动户外', '零食', '家
   border-left: 4px solid var(--info);
 }
 
+.status-card.unplanned,
+.status-card.unplanned.active {
+  border-left: 4px solid var(--warning);
+}
+
 .status-card.ended,
 .status-card.ended.active {
   border-left: 4px solid var(--success);
@@ -281,12 +302,20 @@ const categories = ['女装', '美妆', '箱包', '运动户外', '零食', '家
   border-left-color: var(--info);
 }
 
+:deep(.session-row.status-unplanned td:first-child) {
+  border-left-color: var(--warning);
+}
+
 :deep(.session-row.status-ended td:first-child) {
   border-left-color: var(--success);
 }
 
 :deep(.session-row.status-live td) {
   background: rgba(196, 30, 58, 0.035);
+}
+
+:deep(.session-row.status-unplanned td) {
+  background: rgba(188, 125, 43, 0.035);
 }
 
 @media (max-width: 900px) {

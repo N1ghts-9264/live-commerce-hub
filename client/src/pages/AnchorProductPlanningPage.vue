@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import PageHeader from '../components/PageHeader.vue'
 import { anchorsAPI, anchorProductPlanningAPI, liveSessionsAPI, productsAPI } from '../api'
 
+const route = useRoute()
 const products = ref<any[]>([])
 const anchors = ref<any[]>([])
 const sessions = ref<any[]>([])
@@ -69,7 +71,10 @@ async function loadBaseData() {
   sessions.value = liveRes.data.data || liveRes.data
   selectedProductId.value = products.value[0]?.product_id || ''
   selectedAnchorId.value = anchors.value[0]?.anchor_id || ''
-  selectedLiveId.value = plannableSessions.value[0]?.live_id || sessions.value[0]?.live_id || ''
+  const requestedLiveId = String(route.query.liveId || '')
+  const requestedSession = plannableSessions.value.find((item) => item.live_id === requestedLiveId)
+  const firstPendingSession = plannableSessions.value.find((item) => item.live_status === '待安排')
+  selectedLiveId.value = requestedSession?.live_id || firstPendingSession?.live_id || plannableSessions.value[0]?.live_id || sessions.value[0]?.live_id || ''
 }
 
 async function loadPlanForSelectedSession() {

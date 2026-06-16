@@ -151,7 +151,7 @@ export async function up(knex: Knex): Promise<void> {
     t.dateTime('end_time');
     t.string('platform', 50).notNullable();
     t.string('live_category', 100);
-    t.string('live_status', 20).notNullable().defaultTo('已排期');
+    t.string('live_status', 20).notNullable().defaultTo('待安排');
     t.integer('online_peak');
     t.decimal('total_sales', 12, 2).defaultTo(0);
   });

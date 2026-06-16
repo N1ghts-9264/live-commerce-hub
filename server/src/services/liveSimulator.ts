@@ -76,6 +76,20 @@ export function removeSSEClient(liveId: string, res: any) {
   sseClients.get(liveId)?.delete(res);
 }
 
+export function stopAllSimulations() {
+  for (const state of sessions.values()) {
+    state.running = false;
+    if (state.interval) clearInterval(state.interval);
+  }
+  sessions.clear();
+  for (const clients of sseClients.values()) {
+    for (const res of clients) {
+      try { res.end(); } catch { /* client already closed */ }
+    }
+  }
+  sseClients.clear();
+}
+
 function sendEvent(res: any, event: string, data: any) {
   const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
   res.write(payload);

@@ -138,6 +138,11 @@ export const dashboardAPI = {
   topAnchors: (limit?: number, days?: number) => api.get('/dashboard/top-anchors', { params: { limit, days } }),
 }
 
+// System API
+export const systemAPI = {
+  reset: () => api.post('/system/reset'),
+}
+
 // Selection API
 export const selectionAPI = {
   rankings: (params?: any) => api.get('/selection/rankings', { params }),

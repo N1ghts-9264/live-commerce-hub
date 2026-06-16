@@ -179,8 +179,8 @@ export async function seed(knex: Knex): Promise<void> {
   for (let i = 0; i < 300; i++) {
     const startTime = faker.date.between({ from: '2024-12-01', to: '2025-05-26' });
     const endTime = new Date(startTime.getTime() + faker.number.int({ min: 2, max: 6 }) * 3600000);
-    const status = faker.helpers.arrayElement(['已结束', '已结束', '已结束', '已结束', '进行中', '已排期']);
-    const peak = status === '已排期' ? null : faker.number.int({ min: 500, max: 50000 });
+    const status = faker.helpers.arrayElement(['已结束', '已结束', '已结束', '已结束', '进行中', '已排期', '待安排']);
+    const peak = ['已排期', '待安排'].includes(status) ? null : faker.number.int({ min: 500, max: 50000 });
     const sales = status === '已结束' ? parseFloat((Math.random() * 200000 + 5000).toFixed(2))
       : (status === '进行中' ? parseFloat((Math.random() * 50000).toFixed(2)) : 0);
     sessions.push({
