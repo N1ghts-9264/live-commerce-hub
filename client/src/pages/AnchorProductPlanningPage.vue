@@ -24,6 +24,16 @@ const planDraft = ref<any | null>(null)
 const showScriptModal = ref(false)
 const scriptLoading = ref(false)
 const editingScript = ref<any | null>(null)
+const showCreateSessionModal = ref(false)
+const createSessionSaving = ref(false)
+const createSessionForm = ref({
+  anchor_id: '',
+  live_title: '',
+  platform: '抖音',
+  live_category: '女装',
+  start_time: '',
+  live_status: '待安排',
+})
 
 const plannableSessions = computed(() => sessions.value.filter((item) => {
   const status = String(item.live_status || '')
@@ -43,6 +53,7 @@ const planReady = computed(() => plan.value && plan.value.items?.length)
 const canConfirmPlan = computed(() => planReady.value && plan.value.plan_status !== '已确认')
 const canEditPlan = computed(() => planReady.value && !['进行中', '已结束'].includes(String(plan.value?.live_status || '')))
 const isScheduledPlan = computed(() => plan.value?.live_status === '已排期')
+const categories = ['女装', '美妆', '箱包', '运动户外', '零食', '家居用品', '母婴', '数码', '食品饮料']
 
 function formatMoney(value: number) {
   return `¥${Number(value || 0).toLocaleString()}`
@@ -67,6 +78,47 @@ function statusClass(status: string) {
   if (status === '已确认') return 'status-confirmed'
   if (status === '草案') return 'status-draft'
   return 'status-default'
+}
+
+function toDateTimeInput(date: Date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+  return local.toISOString().slice(0, 16)
+}
+
+function openCreateSession() {
+  const nextHour = new Date(Date.now() + 60 * 60 * 1000)
+  createSessionForm.value = {
+    anchor_id: selectedAnchorId.value || anchors.value[0]?.anchor_id || '',
+    live_title: '',
+    platform: selectedSession.value?.platform || '抖音',
+    live_category: selectedSession.value?.live_category || selectedAnchor.value?.specialization || '女装',
+    start_time: toDateTimeInput(nextHour),
+    live_status: '待安排',
+  }
+  showCreateSessionModal.value = true
+}
+
+async function createSession() {
+  createSessionSaving.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    const payload = {
+      ...createSessionForm.value,
+      live_title: createSessionForm.value.live_title || `${createSessionForm.value.live_category}待安排直播场次`,
+    }
+    const { data } = await liveSessionsAPI.create(payload)
+    const liveRes = await liveSessionsAPI.list({ pageSize: 200 })
+    sessions.value = liveRes.data.data || liveRes.data
+    selectedLiveId.value = data.live_id
+    selectedAnchorId.value = data.anchor_id || selectedAnchorId.value
+    showCreateSessionModal.value = false
+    message.value = '未开播场次已创建，可继续生成带货计划。'
+  } catch (e: any) {
+    error.value = e.response?.data?.message || '新增场次失败'
+  } finally {
+    createSessionSaving.value = false
+  }
 }
 
 function clonePlanForEdit(source: any) {
@@ -351,6 +403,9 @@ onMounted(async () => {
       <button v-if="isScheduledPlan" class="btn primary" :disabled="startingLive" @click="startLive">
         {{ startingLive ? '开启中...' : '开始直播' }}
       </button>
+      <button class="btn" @click="openCreateSession">
+        新增未开播场次
+      </button>
       <span v-if="plan" class="plan-status" :class="statusClass(plan.plan_status)">
         {{ plan.plan_status }} / {{ plan.live_status }}
       </span>
@@ -526,6 +581,52 @@ onMounted(async () => {
         </div>
       </div>
     </section>
+
+    <div v-if="showCreateSessionModal" class="modal-overlay" @click.self="showCreateSessionModal = false">
+      <div class="modal create-session-modal">
+        <div class="modal-title">新增未开播场次</div>
+        <div class="create-form-grid">
+          <div class="form-group">
+            <label class="form-label">主播</label>
+            <select v-model="createSessionForm.anchor_id" class="form-select">
+              <option v-for="anchor in anchors" :key="anchor.anchor_id" :value="anchor.anchor_id">
+                {{ anchor.anchor_name }} / {{ anchor.specialization }}
+              </option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">平台</label>
+            <select v-model="createSessionForm.platform" class="form-select">
+              <option value="抖音">抖音</option>
+              <option value="快手">快手</option>
+              <option value="淘宝直播">淘宝直播</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">直播标题</label>
+          <input v-model="createSessionForm.live_title" class="form-input" placeholder="例如：美妆新品冷启动试播专场" />
+        </div>
+        <div class="create-form-grid">
+          <div class="form-group">
+            <label class="form-label">品类</label>
+            <select v-model="createSessionForm.live_category" class="form-select">
+              <option v-for="category in categories" :key="category" :value="category">{{ category }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">计划开始时间</label>
+            <input v-model="createSessionForm.start_time" type="datetime-local" class="form-input" />
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn" @click="showCreateSessionModal = false">取消</button>
+          <button class="btn primary" :disabled="createSessionSaving || !createSessionForm.anchor_id || !createSessionForm.start_time" @click="createSession">
+            {{ createSessionSaving ? '创建中...' : '创建并安排' }}
+          </button>
+        </div>
+      </div>
+    </div>
 
     <div v-if="showScriptModal" class="modal-overlay" @click.self="showScriptModal = false">
       <div class="modal script-modal">
@@ -1001,6 +1102,16 @@ onMounted(async () => {
   line-height: 1.75;
 }
 
+.create-session-modal {
+  min-width: 560px;
+}
+
+.create-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
 @media (max-width: 1200px) {
   .schedule-band,
   .summary-grid,
@@ -1010,6 +1121,17 @@ onMounted(async () => {
 
   .edit-grid {
     grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .create-session-modal {
+    min-width: 0;
+    width: calc(100vw - 32px);
+  }
+
+  .create-form-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

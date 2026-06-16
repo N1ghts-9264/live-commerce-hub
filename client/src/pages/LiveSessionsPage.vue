@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { liveSessionsAPI, anchorsAPI } from '../api'
-import type { LiveSession, Anchor } from '../types'
+import { liveSessionsAPI } from '../api'
+import type { LiveSession } from '../types'
 import PageHeader from '../components/PageHeader.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import DataTable from '../components/DataTable.vue'
@@ -12,7 +12,6 @@ import { LIVE_SESSION_STATUS_ORDER, countLiveSessionStatuses, nextStatusFilter }
 
 const router = useRouter()
 const sessions = ref<(LiveSession & Record<string, any>)[]>([])
-const anchors = ref<Anchor[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = 20
@@ -20,12 +19,6 @@ const statusFilter = ref('')
 const loading = ref(false)
 const statusCounts = ref<Record<string, number>>({})
 let loadRequestId = 0
-
-const showModal = ref(false)
-const form = ref({
-  anchor_id: '', live_title: '', platform: '抖音',
-  live_category: '女装', start_time: '', live_status: '待安排',
-})
 
 async function load() {
   const requestId = ++loadRequestId
@@ -60,28 +53,8 @@ function onStatusSelectChange() {
   load()
 }
 
-async function loadAnchors() {
-  const { data } = await anchorsAPI.list({ pageSize: 50 })
-  anchors.value = data.data
-}
-
-function openCreate() {
-  const now = new Date()
-  form.value = {
-    anchor_id: anchors.value[0]?.anchor_id || '',
-    live_title: '', platform: '抖音', live_category: '女装',
-    start_time: new Date(now.getTime() + 3600000).toISOString().slice(0, 16),
-    live_status: '待安排',
-  }
-  showModal.value = true
-}
-
-async function save() {
-  try {
-    await liveSessionsAPI.create(form.value)
-    showModal.value = false
-    await refresh()
-  } catch (e: any) { alert(e.response?.data?.message || '保存失败') }
+function goPlanning() {
+  router.push('/live-planning')
 }
 
 function goSession(session: LiveSession) {
@@ -120,7 +93,7 @@ function getSessionRowClass(row: LiveSession) {
 
 function changePage(p: number) { page.value = p; load() }
 
-onMounted(() => { refresh(); loadAnchors() })
+onMounted(() => { refresh() })
 
 const columns = [
   { key: 'live_title', label: '直播标题' },
@@ -134,7 +107,6 @@ const columns = [
   { key: 'actions', label: '操作', sortable: false },
 ]
 
-const categories = ['女装', '美妆', '箱包', '运动户外', '零食', '家居用品', '母婴', '数码', '食品饮料']
 </script>
 
 <template>
@@ -148,8 +120,9 @@ const categories = ['女装', '美妆', '箱包', '运动户外', '零食', '家
         <option value="进行中">进行中</option>
         <option value="已结束">已结束</option>
       </select>
-      <button class="btn primary" @click="openCreate">+ 新增场次</button>
+      <button class="btn primary" @click="goPlanning">进入场次安排</button>
       <button class="btn" @click="refresh">刷新</button>
+      <span class="toolbar-hint">新增未开播场次、排品和确认排期统一在“场次安排”完成。</span>
     </div>
 
     <div class="status-strip">
@@ -186,49 +159,15 @@ const categories = ['女装', '美妆', '箱包', '运动户外', '零食', '家
     </DataTable>
 
     <Pagination v-if="total > pageSize" :page="page" :total="total" :page-size="pageSize" @change="changePage" />
-
-    <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
-      <div class="modal">
-        <div class="modal-title">新增直播场次</div>
-        <div class="form-group">
-          <label class="form-label">主播</label>
-          <select v-model="form.anchor_id" class="form-select">
-            <option v-for="a in anchors" :key="a.anchor_id" :value="a.anchor_id">{{ a.anchor_name }}</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">直播标题</label>
-          <input v-model="form.live_title" class="form-input" placeholder="例如：春季女装满减专场" />
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-          <div class="form-group">
-            <label class="form-label">平台</label>
-            <select v-model="form.platform" class="form-select">
-              <option value="抖音">抖音</option>
-              <option value="快手">快手</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">品类</label>
-            <select v-model="form.live_category" class="form-select">
-              <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">计划开始时间</label>
-          <input v-model="form.start_time" type="datetime-local" class="form-input" />
-        </div>
-        <div class="form-actions">
-          <button class="btn" @click="showModal = false">取消</button>
-          <button class="btn primary" @click="save">保存</button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
 <style scoped>
+.toolbar-hint {
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
 .status-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

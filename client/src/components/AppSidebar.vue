@@ -1,6 +1,23 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import type { Component } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import {
+  BarChart3,
+  CalendarCheck,
+  ClipboardCheck,
+  FileText,
+  Headphones,
+  LayoutDashboard,
+  LogOut,
+  Package,
+  RotateCcw,
+  Target,
+  Truck,
+  Users,
+  Video,
+  Warehouse,
+} from 'lucide-vue-next'
 import { systemAPI } from '../api'
 import { useAuthStore } from '../stores/auth'
 
@@ -9,23 +26,36 @@ const router = useRouter()
 const route = useRoute()
 const resetting = ref(false)
 
-const menuItems = computed(() => {
-  const allItems = [
-    { path: '/dashboard', label: '数据总览', icon: 'layout-dashboard', roles: ['管理层', '运营人员', '采购人员', '仓储人员', '主播', '系统管理员'] },
-    { path: '/live-sessions', label: '直播场次', icon: 'video', roles: ['运营人员', '管理层', '系统管理员'] },
-    { path: '/live-reviews', label: '\u76f4\u64ad\u590d\u76d8', icon: 'clipboard-check', roles: ['运营人员', '管理层', '主播', '系统管理员'] },
-    { path: '/selection', label: '选品分析', icon: 'target', roles: ['运营人员', '管理层', '采购人员', '系统管理员'] },
-    { path: '/anchor-product-planning', label: '场次安排', icon: 'calendar-check', roles: ['运营人员', '管理层', '主播', '系统管理员'] },
-    { path: '/products', label: '商品管理', icon: 'package', roles: ['运营人员', '管理层', '采购人员', '系统管理员'] },
-    { path: '/anchors', label: '主播管理', icon: 'users', roles: ['运营人员', '管理层', '系统管理员'] },
-    { path: '/inventory', label: '库存管理', icon: 'warehouse', roles: ['仓储人员', '管理层', '采购人员', '系统管理员'] },
-    { path: '/purchasing', label: '采购管理', icon: 'truck', roles: ['采购人员', '管理层', '系统管理员'] },
-    { path: '/scripts', label: '脚本管理', icon: 'file-text', roles: ['运营人员', '主播', '管理层', '系统管理员'] },
-    { path: '/reports', label: '运营报告', icon: 'bar-chart-3', roles: ['管理层', '运营人员', '系统管理员'] },
-    { path: '/after-sales', label: '售后工单', icon: 'headphones', roles: ['运营人员', '管理层', '系统管理员'] },
+type MenuItem = {
+  path: string
+  label: string
+  icon: Component
+  roles: string[]
+}
+
+const menuItems = computed<MenuItem[]>(() => {
+  const allItems: MenuItem[] = [
+    { path: '/dashboard', label: '数据总览', icon: LayoutDashboard, roles: ['管理层', '运营人员', '采购人员', '仓储人员', '主播', '系统管理员'] },
+    { path: '/live-sessions', label: '直播场次', icon: Video, roles: ['运营人员', '管理层', '系统管理员'] },
+    { path: '/live-reviews', label: '直播复盘', icon: ClipboardCheck, roles: ['运营人员', '管理层', '主播', '系统管理员'] },
+    { path: '/selection', label: '选品分析', icon: Target, roles: ['运营人员', '管理层', '采购人员', '系统管理员'] },
+    { path: '/anchor-product-planning', label: '场次安排', icon: CalendarCheck, roles: ['运营人员', '管理层', '主播', '系统管理员'] },
+    { path: '/products', label: '商品管理', icon: Package, roles: ['运营人员', '管理层', '采购人员', '系统管理员'] },
+    { path: '/anchors', label: '主播管理', icon: Users, roles: ['运营人员', '管理层', '系统管理员'] },
+    { path: '/inventory', label: '库存管理', icon: Warehouse, roles: ['仓储人员', '管理层', '采购人员', '系统管理员'] },
+    { path: '/purchasing', label: '采购管理', icon: Truck, roles: ['采购人员', '管理层', '系统管理员'] },
+    { path: '/scripts', label: '脚本管理', icon: FileText, roles: ['运营人员', '主播', '管理层', '系统管理员'] },
+    { path: '/reports', label: '运营报告', icon: BarChart3, roles: ['管理层', '运营人员', '系统管理员'] },
+    { path: '/after-sales', label: '售后工单', icon: Headphones, roles: ['运营人员', '管理层', '系统管理员'] },
   ]
   return allItems.filter(item => item.roles.includes(auth.userRole))
 })
+
+const menuGroups = computed(() => [
+  { title: '运营工作台', items: menuItems.value.filter(item => ['/dashboard', '/live-sessions', '/live-reviews', '/selection', '/anchor-product-planning'].includes(item.path)) },
+  { title: '业务资料', items: menuItems.value.filter(item => ['/products', '/anchors', '/scripts'].includes(item.path)) },
+  { title: '履约与复盘', items: menuItems.value.filter(item => ['/inventory', '/purchasing', '/reports', '/after-sales'].includes(item.path)) },
+].filter(group => group.items.length))
 
 function navigate(path: string) {
   router.push(path)
@@ -55,6 +85,11 @@ async function resetSystem() {
   }
 }
 
+function logout() {
+  auth.logout()
+  router.push('/login')
+}
+
 const roleLabels: Record<string, string> = {
   '管理层': '管理层',
   '运营人员': '运营',
@@ -68,37 +103,48 @@ const roleLabels: Record<string, string> = {
 <template>
   <aside class="sidebar">
     <div class="sidebar-brand">
-      直播电商中台
-      <span>LIVE COMMERCE HUB</span>
+      <div class="brand-mark">LC</div>
+      <div>
+        直播电商中台
+        <span>LIVE COMMERCE HUB</span>
+      </div>
     </div>
-    <nav class="sidebar-nav">
-      <a
-        v-for="item in menuItems"
-        :key="item.path"
-        :class="{ active: isActive(item.path) }"
-        @click="navigate(item.path)"
-      >
-        {{ item.label }}
-      </a>
+    <nav class="sidebar-nav" aria-label="主导航">
+      <section v-for="group in menuGroups" :key="group.title" class="nav-group">
+        <div class="nav-group-title">{{ group.title }}</div>
+        <button
+          v-for="item in group.items"
+          :key="item.path"
+          type="button"
+          class="nav-item"
+          :class="{ active: isActive(item.path) }"
+          @click="navigate(item.path)"
+        >
+          <component :is="item.icon" :size="17" stroke-width="1.9" class="nav-icon" />
+          <span>{{ item.label }}</span>
+        </button>
+      </section>
     </nav>
     <div class="sidebar-footer">
-      <div class="avatar">
-        {{ auth.employee?.employee_name?.charAt(0) || 'U' }}
-      </div>
-      <div>
-        <div style="font-weight:600;color:var(--ink);font-size:13px;">
-          {{ auth.employee?.employee_name || '用户' }}
+      <div class="user-row">
+        <div class="avatar">
+          {{ auth.employee?.employee_name?.charAt(0) || 'U' }}
         </div>
-        <div style="font-size:11px;">
-          {{ roleLabels[auth.userRole] || auth.userRole }}
+        <div class="user-meta">
+          <div class="user-name">{{ auth.employee?.employee_name || '用户' }}</div>
+          <div class="user-role">{{ roleLabels[auth.userRole] || auth.userRole }}</div>
         </div>
       </div>
-      <button class="btn small" style="margin-left:auto;" @click="auth.logout(); router.push('/login')">
-        退出
-      </button>
-      <button class="btn small reset-btn" :disabled="resetting" @click="resetSystem">
-        {{ resetting ? '复位中' : '复位' }}
-      </button>
+      <div class="footer-actions">
+        <button class="icon-btn" type="button" title="退出登录" @click="logout">
+          <LogOut :size="15" />
+          <span>退出</span>
+        </button>
+        <button class="icon-btn reset-btn" type="button" :disabled="resetting" title="复位验收数据" @click="resetSystem">
+          <RotateCcw :size="15" />
+          <span>{{ resetting ? '复位中' : '复位' }}</span>
+        </button>
+      </div>
     </div>
   </aside>
 </template>
@@ -113,53 +159,112 @@ const roleLabels: Record<string, string> = {
   z-index: 100; overflow-y: auto;
 }
 .sidebar-brand {
-  padding: 28px 24px 20px;
+  padding: 22px 18px 18px;
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  gap: 12px;
+  align-items: center;
   font-family: var(--font-serif);
-  font-size: 20px; font-weight: 900;
-  letter-spacing: -0.02em;
+  font-size: 18px; font-weight: 900;
   line-height: 1.25;
   color: var(--ink);
   border-bottom: 1px solid var(--rule);
 }
+.brand-mark {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+}
 .sidebar-brand span {
   display: block;
   font-family: var(--font-mono);
-  font-size: 10px; font-weight: 400;
-  letter-spacing: 0.1em;
+  font-size: 9px; font-weight: 400;
+  letter-spacing: 0.08em;
   color: var(--ink-soft);
-  margin-top: 2px;
+  margin-top: 3px;
 }
-.sidebar-nav { flex: 1; padding: 12px 0; }
-.sidebar-nav a {
+.sidebar-nav { flex: 1; padding: 14px 10px; }
+.nav-group + .nav-group { margin-top: 12px; }
+.nav-group-title {
+  padding: 4px 10px 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+}
+.nav-item {
+  width: 100%;
   display: flex; align-items: center; gap: 10px;
-  padding: 11px 24px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  background: transparent;
   font-size: 14px; font-weight: 500;
   color: var(--ink-mid); text-decoration: none;
-  border-left: 3px solid transparent;
   transition: all var(--duration-fast) ease;
   cursor: pointer;
+  text-align: left;
 }
-.sidebar-nav a:hover { background: var(--paper-dark); color: var(--ink); }
-.sidebar-nav a.active {
+.nav-item:hover { background: var(--paper-dark); color: var(--ink); }
+.nav-item.active {
   color: var(--ink);
-  border-left-color: var(--vermillion);
+  border-color: rgba(196, 30, 58, 0.25);
   background: var(--vermillion-soft);
+  box-shadow: inset 3px 0 0 var(--vermillion);
 }
+.nav-icon { flex-shrink: 0; color: currentColor; }
 .sidebar-footer {
-  padding: 16px 24px; border-top: 1px solid var(--rule);
-  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px 16px; border-top: 1px solid var(--rule);
+  display: grid; gap: 12px;
   font-size: 13px; color: var(--ink-soft);
-  flex-wrap: wrap;
+}
+.user-row {
+  display: flex; align-items: center; gap: 10px;
 }
 .avatar {
-  width: 32px; height: 32px; border-radius: 2px;
+  width: 34px; height: 34px; border-radius: 2px;
   background: var(--ink); color: var(--paper);
   display: flex; align-items: center; justify-content: center;
   font-family: var(--font-mono); font-size: 11px; font-weight: 600;
   flex-shrink: 0;
 }
+.user-meta { min-width: 0; }
+.user-name {
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 13px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.user-role { font-size: 11px; }
+.footer-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink-mid);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+.icon-btn:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.icon-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .reset-btn {
-  width: 100%;
   border-color: rgba(188, 125, 43, 0.45);
   color: var(--warning);
 }

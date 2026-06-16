@@ -156,6 +156,8 @@ const periodText = computed(() => {
   if (!summary.value?.period) return `近${dashboardDays}天`
   return `${summary.value.period.label} · ${summary.value.period.startDate} 至 ${summary.value.period.endDate}`
 })
+
+const topAnchorMax = computed(() => Math.max(...topAnchors.value.map((a: any) => Number(a.total_gmv || 0)), 1))
 </script>
 
 <template>
@@ -188,8 +190,8 @@ const periodText = computed(() => {
     <div class="section-grid">
       <div class="card">
         <div class="card-header">
-          <span class="card-title">销售趋势（近30天）</span>
-          <span class="card-extra">{{ periodText }} · GMV / 订单数</span>
+          <span class="card-title">销售趋势</span>
+          <span class="card-extra">GMV / 订单数</span>
         </div>
         <div class="card-divider"></div>
         <div class="card-body">
@@ -204,22 +206,27 @@ const periodText = computed(() => {
       <div class="card">
         <div class="card-header">
           <span class="card-title">主播排名 TOP5</span>
-          <span class="card-extra">近30天 GMV</span>
+          <span class="card-extra">GMV 贡献</span>
         </div>
         <div class="card-divider"></div>
         <div class="card-body">
           <div v-if="topAnchors.length">
-            <div class="anchor-item" v-for="(a, idx) in topAnchors" :key="a.anchor_id">
+            <div class="anchor-item ranked-anchor" v-for="(a, idx) in topAnchors" :key="a.anchor_id">
               <span class="anchor-rank" :class="{ t1: idx === 0 }">{{ idx + 1 }}</span>
               <div class="anchor-avatar">{{ a.anchor_name?.charAt(0) }}</div>
               <div class="anchor-info">
-                <div class="anchor-name">{{ a.anchor_name }}</div>
+                <div class="anchor-name-row">
+                  <div class="anchor-name">{{ a.anchor_name }}</div>
+                  <div class="anchor-gmv">{{ formatCurrency(a.total_gmv || 0) }}</div>
+                </div>
                 <div class="anchor-meta">
                   <span :class="getLevelClass(a.anchor_level)">{{ a.anchor_level }}</span>
                   {{ a.specialization }}
                 </div>
+                <div class="rank-track">
+                  <i :style="{ width: `${Math.max(8, Number(a.total_gmv || 0) / topAnchorMax * 100)}%` }"></i>
+                </div>
               </div>
-              <div class="anchor-gmv">{{ formatCurrency(a.total_gmv || 0) }}</div>
             </div>
           </div>
           <div v-else style="padding:20px;color:var(--ink-soft);">暂无数据</div>
@@ -266,6 +273,30 @@ const periodText = computed(() => {
 .chart-wrap canvas {
   width: 100% !important;
   height: 100% !important;
+}
+
+.ranked-anchor {
+  align-items: flex-start;
+}
+
+.anchor-name-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.rank-track {
+  height: 7px;
+  margin-top: 8px;
+  background: rgba(17, 17, 17, 0.08);
+  overflow: hidden;
+}
+
+.rank-track i {
+  display: block;
+  height: 100%;
+  background: var(--vermillion);
 }
 
 @media (max-width: 900px) {
