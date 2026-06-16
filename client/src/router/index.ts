@@ -64,9 +64,10 @@ const router = createRouter({
     },
     {
       path: '/anchor-product-planning',
+      alias: '/live-planning',
       name: 'AnchorProductPlanning',
       component: () => import('../pages/AnchorProductPlanningPage.vue'),
-      meta: { title: '主播适配' },
+      meta: { title: '场次安排' },
     },
     {
       path: '/reports',

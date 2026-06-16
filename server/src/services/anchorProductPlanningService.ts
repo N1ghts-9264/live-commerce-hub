@@ -26,6 +26,23 @@ function parseJson(value: any, fallback: any) {
   }
 }
 
+export function isPlannableLiveStatus(status: string | null | undefined) {
+  const value = String(status || '');
+  return !value.includes('进行中') && !value.includes('已结束');
+}
+
+export function buildPlanConfirmationPatch(now = new Date()) {
+  return {
+    plan: {
+      plan_status: '已确认',
+      updated_time: now,
+    },
+    liveSession: {
+      live_status: '已排期',
+    },
+  };
+}
+
 async function getAnchorInput(anchorId: string, category?: string): Promise<AnchorFitInput> {
   const anchor = await knex('Anchor').where('anchor_id', anchorId).first();
   if (!anchor) throw new Error('主播不存在');
@@ -259,6 +276,7 @@ export async function createLivePlan(liveId: string, productIds?: string[]) {
     .select('LiveSession.*', 'Anchor.anchor_name')
     .first();
   if (!session) throw new Error('直播场次不存在');
+  if (!isPlannableLiveStatus(session.live_status)) throw new Error('进行中或已结束场次不能重新生成排品计划');
 
   const fits = await getFitsForLivePlan(session, productIds);
   const planItems = buildLivePlanItems(fits).slice(0, 8);
@@ -318,6 +336,26 @@ export async function createLivePlan(liveId: string, productIds?: string[]) {
   await knex('LivePlanItem').insert(itemRows);
 
   return getLivePlan(planId);
+}
+
+export async function confirmLivePlan(idOrLiveId: string) {
+  const existing = await knex('LivePlan')
+    .join('LiveSession', 'LivePlan.live_id', 'LiveSession.live_id')
+    .where((builder) => {
+      builder.where('LivePlan.plan_id', idOrLiveId).orWhere('LivePlan.live_id', idOrLiveId);
+    })
+    .select('LivePlan.plan_id', 'LivePlan.live_id', 'LiveSession.live_status')
+    .first();
+  if (!existing) throw new Error('直播计划不存在');
+  if (!isPlannableLiveStatus(existing.live_status)) throw new Error('进行中或已结束场次不能确认排品计划');
+
+  const patch = buildPlanConfirmationPatch();
+  await knex.transaction(async (trx) => {
+    await trx('LivePlan').where('plan_id', existing.plan_id).update(patch.plan);
+    await trx('LiveSession').where('live_id', existing.live_id).update(patch.liveSession);
+  });
+
+  return getLivePlan(existing.plan_id);
 }
 
 export async function getLivePlan(idOrLiveId: string) {

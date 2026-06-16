@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { authenticate } from '../middleware/auth';
 import {
+  confirmLivePlan,
   createLivePlan,
   generateFitsForAnchor,
   generateFitsForProduct,
@@ -51,6 +52,16 @@ router.post('/plans/:liveId', async (req: Request, res: Response) => {
   try {
     const plan = await createLivePlan(req.params.liveId, req.body?.productIds);
     return res.status(201).json(plan);
+  } catch (err: any) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/anchor-product-planning/plans/:id/confirm
+router.post('/plans/:id/confirm', async (req: Request, res: Response) => {
+  try {
+    const plan = await confirmLivePlan(req.params.id);
+    return res.json(plan);
   } catch (err: any) {
     return res.status(500).json({ message: err.message });
   }
