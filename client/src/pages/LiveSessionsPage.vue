@@ -8,6 +8,7 @@ import StatusBadge from '../components/StatusBadge.vue'
 import DataTable from '../components/DataTable.vue'
 import Pagination from '../components/Pagination.vue'
 import { getLiveSessionTargetPath, isEndedLiveStatus } from '../utils/liveNavigation'
+import { LIVE_SESSION_STATUS_ORDER, countLiveSessionStatuses, nextStatusFilter } from '../utils/liveSessionStatus'
 
 const router = useRouter()
 const sessions = ref<(LiveSession & Record<string, any>)[]>([])
@@ -17,6 +18,8 @@ const page = ref(1)
 const pageSize = 20
 const statusFilter = ref('')
 const loading = ref(false)
+const statusCounts = ref<Record<string, number>>({})
+let loadRequestId = 0
 
 const showModal = ref(false)
 const form = ref({
@@ -25,12 +28,36 @@ const form = ref({
 })
 
 async function load() {
+  const requestId = ++loadRequestId
   loading.value = true
   try {
     const { data } = await liveSessionsAPI.list({ page: page.value, pageSize, status: statusFilter.value })
+    if (requestId !== loadRequestId) return
     sessions.value = data.data
     total.value = data.total
-  } finally { loading.value = false }
+  } finally {
+    if (requestId === loadRequestId) loading.value = false
+  }
+}
+
+async function loadStatusCounts() {
+  const { data } = await liveSessionsAPI.list({ page: 1, pageSize: 1000 })
+  statusCounts.value = countLiveSessionStatuses(data.data || [])
+}
+
+async function refresh() {
+  await Promise.all([load(), loadStatusCounts()])
+}
+
+function setStatusFilter(status: string) {
+  page.value = 1
+  statusFilter.value = nextStatusFilter(statusFilter.value, status)
+  load()
+}
+
+function onStatusSelectChange() {
+  page.value = 1
+  load()
 }
 
 async function loadAnchors() {
@@ -53,7 +80,7 @@ async function save() {
   try {
     await liveSessionsAPI.create(form.value)
     showModal.value = false
-    await load()
+    await refresh()
   } catch (e: any) { alert(e.response?.data?.message || '保存失败') }
 }
 
@@ -67,9 +94,9 @@ const statusMeta: Record<string, { label: string; hint: string; className: strin
   '已结束': { label: '已结束', hint: '可查看复盘数据', className: 'ended' },
 }
 
-const statusCards = computed(() => ['进行中', '已排期', '已结束'].map((status) => ({
+const statusCards = computed(() => LIVE_SESSION_STATUS_ORDER.map((status) => ({
   status,
-  count: sessions.value.filter((item) => item.live_status === status).length,
+  count: statusCounts.value[status] || 0,
   ...statusMeta[status],
 })))
 
@@ -81,7 +108,7 @@ function getSessionRowClass(row: LiveSession) {
 
 function changePage(p: number) { page.value = p; load() }
 
-onMounted(() => { load(); loadAnchors() })
+onMounted(() => { refresh(); loadAnchors() })
 
 const columns = [
   { key: 'live_title', label: '直播标题' },
@@ -102,14 +129,14 @@ const categories = ['女装', '美妆', '箱包', '运动户外', '零食', '家
   <PageHeader title="直播场次" subtitle="场次安排与管理" />
   <div class="page-body">
     <div class="toolbar">
-      <select v-model="statusFilter" class="form-select" style="width:auto;" @change="load()">
+      <select v-model="statusFilter" class="form-select" style="width:auto;" @change="onStatusSelectChange">
         <option value="">全部状态</option>
         <option value="已排期">已排期</option>
         <option value="进行中">进行中</option>
         <option value="已结束">已结束</option>
       </select>
       <button class="btn primary" @click="openCreate">+ 新增场次</button>
-      <button class="btn" @click="load()">刷新</button>
+      <button class="btn" @click="refresh">刷新</button>
     </div>
 
     <div class="status-strip">
@@ -119,7 +146,7 @@ const categories = ['女装', '美妆', '箱包', '运动户外', '零食', '家
         class="status-card"
         :class="[card.className, { active: statusFilter === card.status }]"
         type="button"
-        @click="statusFilter = statusFilter === card.status ? '' : card.status; load()"
+        @click="setStatusFilter(card.status)"
       >
         <span class="status-card-label">{{ card.label }}</span>
         <strong>{{ card.count }}</strong>

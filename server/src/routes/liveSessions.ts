@@ -117,7 +117,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 // POST /api/live-sessions/:id/simulate/start
 router.post('/:id/simulate/start', async (req: Request, res: Response) => {
   try {
-    await startSimulation(req.params.id);
+    await startSimulation(req.params.id, { preloadSeconds: 0, preserveStartTime: false });
     return res.json({ success: true, message: '直播模拟已启动' });
   } catch (err: any) {
     return res.status(500).json({ message: err.message });

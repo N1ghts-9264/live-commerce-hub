@@ -10,6 +10,7 @@
     "test:realtime": "C:\\Progra~1\\nodejs\\node.exe ../server/node_modules/tsx/dist/cli.mjs src/utils/realtimeSeries.test.ts",
     "test:table": "C:\\Progra~1\\nodejs\\node.exe ../server/node_modules/tsx/dist/cli.mjs src/utils/tableSort.test.ts",
     "test:live-navigation": "C:\\Progra~1\\nodejs\\node.exe ../server/node_modules/tsx/dist/cli.mjs src/utils/liveNavigation.test.ts",
+    "test:live-status": "C:\\Progra~1\\nodejs\\node.exe ../server/node_modules/tsx/dist/cli.mjs src/utils/liveSessionStatus.test.ts",
     "test:live-review-import": "C:\\Progra~1\\nodejs\\node.exe ../server/node_modules/tsx/dist/cli.mjs src/pages/LiveReviewPage.import.test.ts"
   },
   "dependencies": {

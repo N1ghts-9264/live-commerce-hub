@@ -117,6 +117,20 @@ export function createWarmupSeries(nowMs: number, seconds: number, baseOnline: n
   return { labels, online, gmv: gmvValues };
 }
 
+export function resolveSimulationStartTime(options: {
+  nowMs?: number;
+  preloadSeconds?: number;
+  preserveStartTime?: boolean;
+  sessionStartTime?: string | Date | null;
+}) {
+  const nowMs = options.nowMs ?? Date.now();
+  if (options.preserveStartTime && options.sessionStartTime) {
+    const sessionStart = new Date(options.sessionStartTime);
+    if (Number.isFinite(sessionStart.getTime())) return sessionStart;
+  }
+  return new Date(nowMs - Math.max(0, options.preloadSeconds || 0) * 1000);
+}
+
 export function buildSimulatorSnapshot(state: SimulatorSnapshotState) {
   return {
     metrics: {
@@ -206,10 +220,12 @@ export async function startSimulation(liveId: string, options: { preloadSeconds?
   const category = session.live_category || '\u5973\u88c5';
   const productSkus = await loadSessionSKUs(liveId, category);
   const firstProduct = productSkus[Math.floor(Math.random() * productSkus.length)];
-  const preloadSeconds = options.preloadSeconds ?? 120;
-  const startedAt = options.preserveStartTime && session.start_time
-    ? new Date(session.start_time)
-    : new Date(Date.now() - preloadSeconds * 1000);
+  const preloadSeconds = options.preloadSeconds ?? 0;
+  const startedAt = resolveSimulationStartTime({
+    preloadSeconds,
+    preserveStartTime: options.preserveStartTime,
+    sessionStartTime: session.start_time,
+  });
   const baseOnline = 500 + Math.floor(Math.random() * 2000);
   const online = Math.max(50, baseOnline + Math.floor(Math.random() * 400));
   const warmupGmv = Math.round((firstProduct?.sale_price || 99) * (2 + Math.floor(Math.random() * 8)));
