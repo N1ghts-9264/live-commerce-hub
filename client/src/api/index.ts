@@ -107,6 +107,7 @@ export const anchorProductPlanningAPI = {
   generateForProduct: (productId: string, data?: any) => api.post(`/anchor-product-planning/fits/product/${productId}`, data),
   generateForAnchor: (anchorId: string, data?: any) => api.post(`/anchor-product-planning/fits/anchor/${anchorId}`, data),
   createPlan: (liveId: string, data?: any) => api.post(`/anchor-product-planning/plans/${liveId}`, data),
+  updatePlan: (id: string, data: any) => api.put(`/anchor-product-planning/plans/${id}`, data),
   confirmPlan: (id: string) => api.post(`/anchor-product-planning/plans/${id}/confirm`),
   getPlan: (id: string) => api.get(`/anchor-product-planning/plans/${id}`),
 }

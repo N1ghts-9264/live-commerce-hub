@@ -9,5 +9,7 @@ assert.equal(isEndedLiveStatus('已排期'), false)
 assert.equal(getLiveSessionTargetPath({ live_id: 'LIVE001', live_status: '已结束' }), '/live-reviews?liveId=LIVE001')
 assert.equal(getLiveSessionTargetPath({ live_id: 'LIVE002', live_status: '宸茬粨鏉?' }), '/live-reviews?liveId=LIVE002')
 assert.equal(getLiveSessionTargetPath({ live_id: 'LIVE003', live_status: '进行中' }), '/monitor?id=LIVE003')
+assert.equal(getLiveSessionTargetPath({ live_id: 'LIVE004', live_status: '已排期' }), '/live-planning?liveId=LIVE004&mode=detail')
+assert.equal(getLiveSessionTargetPath({ live_id: 'LIVE005', live_status: '待安排' }), '/live-planning?liveId=LIVE005')
 
 console.log('live navigation tests passed')

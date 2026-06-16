@@ -7,6 +7,7 @@ import {
   generateFitsForProduct,
   getLivePlan,
   listAnchorProductFits,
+  updateLivePlan,
 } from '../services/anchorProductPlanningService';
 
 const router = Router();
@@ -61,6 +62,16 @@ router.post('/plans/:liveId', async (req: Request, res: Response) => {
 router.post('/plans/:id/confirm', async (req: Request, res: Response) => {
   try {
     const plan = await confirmLivePlan(req.params.id);
+    return res.json(plan);
+  } catch (err: any) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+// PUT /api/anchor-product-planning/plans/:id
+router.put('/plans/:id', async (req: Request, res: Response) => {
+  try {
+    const plan = await updateLivePlan(req.params.id, req.body || {});
     return res.json(plan);
   } catch (err: any) {
     return res.status(500).json({ message: err.message });

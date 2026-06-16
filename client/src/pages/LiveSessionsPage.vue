@@ -94,7 +94,7 @@ function goSession(session: LiveSession) {
 
 function getActionLabel(status: string) {
   if (status === '待安排') return '安排场次'
-  if (status === '已排期') return '开启直播'
+  if (status === '已排期') return '查看安排'
   if (status === '进行中') return '监控中'
   return '查看复盘'
 }

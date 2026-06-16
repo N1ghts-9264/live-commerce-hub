@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import PageHeader from '../components/PageHeader.vue'
-import { anchorsAPI, anchorProductPlanningAPI, liveSessionsAPI, productsAPI } from '../api'
+import { anchorsAPI, anchorProductPlanningAPI, liveSessionsAPI, productsAPI, scriptsAPI } from '../api'
 
 const route = useRoute()
+const router = useRouter()
 const products = ref<any[]>([])
 const anchors = ref<any[]>([])
 const sessions = ref<any[]>([])
@@ -15,8 +16,14 @@ const selectedAnchorId = ref('')
 const selectedLiveId = ref('')
 const loading = ref(false)
 const confirming = ref(false)
+const savingPlan = ref(false)
+const startingLive = ref(false)
 const error = ref('')
 const message = ref('')
+const planDraft = ref<any | null>(null)
+const showScriptModal = ref(false)
+const scriptLoading = ref(false)
+const editingScript = ref<any | null>(null)
 
 const plannableSessions = computed(() => sessions.value.filter((item) => {
   const status = String(item.live_status || '')
@@ -34,6 +41,8 @@ const roleCounts = computed(() => {
 })
 const planReady = computed(() => plan.value && plan.value.items?.length)
 const canConfirmPlan = computed(() => planReady.value && plan.value.plan_status !== '已确认')
+const canEditPlan = computed(() => planReady.value && !['进行中', '已结束'].includes(String(plan.value?.live_status || '')))
+const isScheduledPlan = computed(() => plan.value?.live_status === '已排期')
 
 function formatMoney(value: number) {
   return `¥${Number(value || 0).toLocaleString()}`
@@ -60,6 +69,27 @@ function statusClass(status: string) {
   return 'status-default'
 }
 
+function clonePlanForEdit(source: any) {
+  if (!source) return null
+  return {
+    plan_goal: source.plan_goal || '',
+    items: (source.items || []).map((item: any) => ({
+      item_id: item.item_id,
+      product_name: item.product_name,
+      category: item.category,
+      sort_order: item.sort_order,
+      plan_role: item.plan_role,
+      suggested_minutes: item.suggested_minutes,
+      target_gmv: item.target_gmv,
+      target_orders: item.target_orders,
+      script_id: item.script_id,
+      script_title: item.script_title,
+      plan_reason: item.plan_reason,
+      risk_notes: item.risk_notes,
+    })),
+  }
+}
+
 async function loadBaseData() {
   const [productRes, anchorRes, liveRes] = await Promise.all([
     productsAPI.list({ pageSize: 100 }),
@@ -79,12 +109,23 @@ async function loadBaseData() {
 
 async function loadPlanForSelectedSession() {
   plan.value = null
+  planDraft.value = null
   if (!selectedLiveId.value) return
   try {
     const { data } = await anchorProductPlanningAPI.getPlan(selectedLiveId.value)
     plan.value = data
+    planDraft.value = clonePlanForEdit(data)
     if (data?.anchor_id) selectedAnchorId.value = data.anchor_id
   } catch (e: any) {
+    if (e.response?.status === 404 && selectedSession.value?.live_status === '已排期') {
+      const { data: draft } = await anchorProductPlanningAPI.createPlan(selectedLiveId.value)
+      const { data: confirmed } = await anchorProductPlanningAPI.confirmPlan(draft.plan_id)
+      plan.value = confirmed
+      planDraft.value = clonePlanForEdit(confirmed)
+      if (confirmed?.anchor_id) selectedAnchorId.value = confirmed.anchor_id
+      message.value = '已自动补齐本场已排期直播的带货安排详情。'
+      return
+    }
     if (e.response?.status !== 404) error.value = e.response?.data?.message || '计划加载失败'
   }
 }
@@ -139,6 +180,7 @@ async function runLivePlan() {
   try {
     const { data } = await anchorProductPlanningAPI.createPlan(selectedLiveId.value)
     plan.value = data
+    planDraft.value = clonePlanForEdit(data)
     if (data?.anchor_id) selectedAnchorId.value = data.anchor_id
     message.value = '场次排品草案已生成，请审查商品顺序、推荐时长、目标和风险后确认。'
     await loadFits()
@@ -157,6 +199,7 @@ async function confirmPlan() {
   try {
     const { data } = await anchorProductPlanningAPI.confirmPlan(plan.value.plan_id)
     plan.value = data
+    planDraft.value = clonePlanForEdit(data)
     const liveRes = await liveSessionsAPI.list({ pageSize: 200 })
     sessions.value = liveRes.data.data || liveRes.data
     message.value = '计划已确认，直播场次已更新为已排期。'
@@ -164,6 +207,76 @@ async function confirmPlan() {
     error.value = e.response?.data?.message || '确认计划失败'
   } finally {
     confirming.value = false
+  }
+}
+
+async function savePlanAdjustments() {
+  if (!plan.value?.plan_id || !planDraft.value) return
+  savingPlan.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    const { data } = await anchorProductPlanningAPI.updatePlan(plan.value.plan_id, {
+      plan_goal: planDraft.value.plan_goal,
+      items: planDraft.value.items,
+    })
+    plan.value = data
+    planDraft.value = clonePlanForEdit(data)
+    message.value = '人工调整已保存，系统已重新计算目标 GMV、订单和讲解时长。'
+  } catch (e: any) {
+    error.value = e.response?.data?.message || '保存计划调整失败'
+  } finally {
+    savingPlan.value = false
+  }
+}
+
+async function openScript(item: any) {
+  if (!item.script_id) return
+  showScriptModal.value = true
+  scriptLoading.value = true
+  editingScript.value = null
+  try {
+    const { data } = await scriptsAPI.get(item.script_id)
+    editingScript.value = data
+  } catch (e: any) {
+    error.value = e.response?.data?.message || '脚本加载失败'
+    showScriptModal.value = false
+  } finally {
+    scriptLoading.value = false
+  }
+}
+
+async function saveScript() {
+  if (!editingScript.value?.script_id) return
+  scriptLoading.value = true
+  try {
+    const { data } = await scriptsAPI.update(editingScript.value.script_id, {
+      script_title: editingScript.value.script_title,
+      script_content: editingScript.value.script_content,
+      tags: editingScript.value.tags,
+    })
+    editingScript.value = data
+    message.value = '讲解脚本已更新。'
+    showScriptModal.value = false
+    await loadPlanForSelectedSession()
+  } catch (e: any) {
+    error.value = e.response?.data?.message || '脚本保存失败'
+  } finally {
+    scriptLoading.value = false
+  }
+}
+
+async function startLive() {
+  if (!plan.value?.live_id) return
+  startingLive.value = true
+  error.value = ''
+  try {
+    await liveSessionsAPI.startSimulate(plan.value.live_id, { preloadSeconds: 0 })
+    router.push(`/monitor?id=${plan.value.live_id}`)
+  } catch (e: any) {
+    error.value = e.response?.data?.message || '开启直播失败'
+  } finally {
+    startingLive.value = false
   }
 }
 
@@ -232,6 +345,12 @@ onMounted(async () => {
       <button class="btn" :disabled="confirming || !canConfirmPlan" @click="confirmPlan">
         确认无误并设为已排期
       </button>
+      <button class="btn" :disabled="savingPlan || !canEditPlan" @click="savePlanAdjustments">
+        {{ savingPlan ? '保存中...' : '保存人工调整' }}
+      </button>
+      <button v-if="isScheduledPlan" class="btn primary" :disabled="startingLive" @click="startLive">
+        {{ startingLive ? '开启中...' : '开始直播' }}
+      </button>
       <span v-if="plan" class="plan-status" :class="statusClass(plan.plan_status)">
         {{ plan.plan_status }} / {{ plan.live_status }}
       </span>
@@ -295,22 +414,66 @@ onMounted(async () => {
             </div>
           </div>
 
-          <p class="plan-goal">{{ plan.plan_goal }}</p>
+          <div v-if="planDraft" class="plan-editor">
+            <label class="form-label">场次目标说明</label>
+            <textarea v-model="planDraft.plan_goal" class="form-input" rows="3" :disabled="!canEditPlan" />
 
-          <div class="plan-items">
-            <div v-for="item in plan.items" :key="item.item_id" class="plan-item">
-              <div class="order">{{ item.sort_order }}</div>
-              <div>
-                <strong>{{ item.product_name }}</strong>
-                <small>
-                  {{ item.category }} / {{ item.suggested_minutes }} 分钟 /
-                  {{ formatMoney(item.target_gmv) }} / {{ item.target_orders }} 单
-                </small>
-                <p>{{ item.plan_reason }}</p>
-                <p v-if="item.script_title" class="script-line">脚本参考：{{ item.script_title }}</p>
-                <p class="risk">{{ item.risk_notes }}</p>
+            <div class="plan-items editable">
+              <div v-for="item in planDraft.items" :key="item.item_id" class="plan-item editable-item">
+                <div class="order">{{ item.sort_order }}</div>
+                <div class="editable-body">
+                  <div class="item-title-row">
+                    <div>
+                      <strong>{{ item.product_name }}</strong>
+                      <small>{{ item.category }} / {{ item.script_title || '已生成场次脚本' }}</small>
+                    </div>
+                    <span class="role-pill" :class="roleClass(item.plan_role)">{{ item.plan_role }}</span>
+                  </div>
+
+                  <div class="edit-grid">
+                    <label>
+                      <span>顺序</span>
+                      <input v-model.number="item.sort_order" type="number" min="1" class="form-input" :disabled="!canEditPlan" />
+                    </label>
+                    <label>
+                      <span>角色</span>
+                      <select v-model="item.plan_role" class="form-select" :disabled="!canEditPlan">
+                        <option value="主推">主推</option>
+                        <option value="辅推">辅推</option>
+                        <option value="试播">试播</option>
+                        <option value="暂缓">暂缓</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>讲解分钟</span>
+                      <input v-model.number="item.suggested_minutes" type="number" min="1" class="form-input" :disabled="!canEditPlan" />
+                    </label>
+                    <label>
+                      <span>目标 GMV</span>
+                      <input v-model.number="item.target_gmv" type="number" min="0" class="form-input" :disabled="!canEditPlan" />
+                    </label>
+                    <label>
+                      <span>目标订单</span>
+                      <input v-model.number="item.target_orders" type="number" min="0" class="form-input" :disabled="!canEditPlan" />
+                    </label>
+                  </div>
+
+                  <label class="wide-field">
+                    <span>安排理由</span>
+                    <textarea v-model="item.plan_reason" class="form-input" rows="2" :disabled="!canEditPlan" />
+                  </label>
+                  <label class="wide-field">
+                    <span>风险备注</span>
+                    <textarea v-model="item.risk_notes" class="form-input" rows="2" :disabled="!canEditPlan" />
+                  </label>
+
+                  <div class="script-actions">
+                    <button class="btn small" :disabled="!item.script_id" @click="openScript(item)">
+                      查看/编辑AI讲解脚本
+                    </button>
+                  </div>
+                </div>
               </div>
-              <span class="role-pill" :class="roleClass(item.plan_role)">{{ item.plan_role }}</span>
             </div>
           </div>
         </template>
@@ -363,6 +526,31 @@ onMounted(async () => {
         </div>
       </div>
     </section>
+
+    <div v-if="showScriptModal" class="modal-overlay" @click.self="showScriptModal = false">
+      <div class="modal script-modal">
+        <div class="modal-head">
+          <div>
+            <div class="modal-title">AI讲解脚本</div>
+            <p>该脚本已绑定到当前场次、主播和商品，可在开播前人工润色。</p>
+          </div>
+          <button class="btn small" @click="showScriptModal = false">关闭</button>
+        </div>
+        <div v-if="scriptLoading" class="empty-state">脚本加载中...</div>
+        <template v-else-if="editingScript">
+          <label class="form-label">脚本标题</label>
+          <input v-model="editingScript.script_title" class="form-input" />
+          <label class="form-label">脚本内容</label>
+          <textarea v-model="editingScript.script_content" class="form-input script-textarea" rows="18" />
+          <label class="form-label">标签</label>
+          <input v-model="editingScript.tags" class="form-input" />
+          <div class="form-actions">
+            <button class="btn" @click="showScriptModal = false">取消</button>
+            <button class="btn primary" :disabled="scriptLoading" @click="saveScript">保存脚本</button>
+          </div>
+        </template>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -745,11 +933,83 @@ onMounted(async () => {
   font-size: 12px;
 }
 
+.plan-editor {
+  display: grid;
+  gap: 12px;
+}
+
+.editable-item {
+  grid-template-columns: 34px 1fr;
+}
+
+.editable-body {
+  display: grid;
+  gap: 12px;
+}
+
+.item-title-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.edit-grid {
+  display: grid;
+  grid-template-columns: 72px 110px repeat(3, minmax(100px, 1fr));
+  gap: 10px;
+}
+
+.edit-grid label,
+.wide-field {
+  display: grid;
+  gap: 5px;
+}
+
+.edit-grid span,
+.wide-field span {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.script-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.script-modal {
+  min-width: 680px;
+  max-width: 860px;
+}
+
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.modal-head p {
+  margin: 4px 0 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.script-textarea {
+  resize: vertical;
+  line-height: 1.75;
+}
+
 @media (max-width: 1200px) {
   .schedule-band,
   .summary-grid,
   .content-grid {
     grid-template-columns: 1fr;
+  }
+
+  .edit-grid {
+    grid-template-columns: 1fr 1fr;
   }
 }
 </style>

@@ -43,6 +43,79 @@ export function buildPlanConfirmationPatch(now = new Date()) {
   };
 }
 
+type PlanItemUpdateInput = {
+  item_id: string;
+  sort_order?: number;
+  plan_role?: string;
+  suggested_minutes?: number;
+  target_gmv?: number;
+  target_orders?: number;
+  plan_reason?: string;
+  risk_notes?: string;
+  script_id?: string | null;
+};
+
+function intValue(value: any) {
+  return Math.max(0, Math.round(n(value)));
+}
+
+function textValue(value: any, fallback: string) {
+  const text = String(value || '').trim();
+  return text || fallback;
+}
+
+export function buildPlanItemUpdatePatch(items: PlanItemUpdateInput[]) {
+  const normalized = [...items]
+    .filter((item) => item.item_id)
+    .map((item, index) => ({
+      item_id: item.item_id,
+      sort_order: intValue(item.sort_order || index + 1),
+      plan_role: textValue(item.plan_role, '辅推'),
+      suggested_minutes: intValue(item.suggested_minutes),
+      target_gmv: n(item.target_gmv),
+      target_orders: intValue(item.target_orders),
+      plan_reason: textValue(item.plan_reason, '人工调整后的场次安排。'),
+      risk_notes: textValue(item.risk_notes, '暂无明显风险。'),
+      script_id: item.script_id || null,
+    }))
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((item, index) => ({ ...item, sort_order: index + 1 }));
+
+  return {
+    items: normalized,
+    summary: {
+      target_gmv: normalized.reduce((sum, item) => sum + item.target_gmv, 0),
+      target_orders: normalized.reduce((sum, item) => sum + item.target_orders, 0),
+      total_planned_minutes: normalized.reduce((sum, item) => sum + item.suggested_minutes, 0),
+    },
+  };
+}
+
+export function buildPlanScriptDraft(input: {
+  live_title: string;
+  anchor_name: string;
+  product_name: string;
+  plan_role: string;
+  suggested_minutes: number;
+  plan_reason: string;
+}) {
+  const title = `${input.live_title} - ${input.product_name}讲解脚本`;
+  const minutes = intValue(input.suggested_minutes) || 3;
+  return {
+    script_type: '讲解',
+    tags: '场次安排AI生成',
+    script_title: title,
+    script_content: [
+      `【场次定位】${input.live_title}`,
+      `【主播提示】${input.anchor_name}，本商品在本场定位为${input.plan_role}，建议讲解${minutes}分钟。`,
+      `【开场承接】家人们，接下来这款${input.product_name}是本场重点安排的商品，先帮大家把适合谁、值不值得买讲清楚。`,
+      `【核心卖点】围绕商品品质、使用场景、价格优势和售后保障展开，重点回应用户为什么现在下单。`,
+      `【转化话术】如果你正好有这个需求，先拍下锁定库存和活动价；不确定的家人可以在弹幕里问，我会逐条回答。`,
+      `【安排依据】${input.plan_reason}`,
+    ].join('\n'),
+  };
+}
+
 async function getAnchorInput(anchorId: string, category?: string): Promise<AnchorFitInput> {
   const anchor = await knex('Anchor').where('anchor_id', anchorId).first();
   if (!anchor) throw new Error('主播不存在');
@@ -269,6 +342,40 @@ async function findScriptId(liveId: string, anchorId: string, productId: string)
   return script?.script_id || null;
 }
 
+async function ensurePlanItemScript(session: any, item: any) {
+  const existing = await knex('Script')
+    .where({ live_id: session.live_id, product_id: item.product_id })
+    .orderBy('create_time', 'desc')
+    .first();
+  if (existing) return existing.script_id;
+
+  const product = await knex('Product').where('product_id', item.product_id).first();
+  if (!product) return findScriptId(session.live_id, session.anchor_id, item.product_id);
+
+  const draft = buildPlanScriptDraft({
+    live_title: session.live_title,
+    anchor_name: session.anchor_name,
+    product_name: product.product_name,
+    plan_role: item.plan_role,
+    suggested_minutes: item.suggested_minutes,
+    plan_reason: item.plan_reason,
+  });
+  const scriptId = id('SCR');
+  await knex('Script').insert({
+    script_id: scriptId,
+    product_id: item.product_id,
+    live_id: session.live_id,
+    anchor_id: session.anchor_id,
+    script_title: draft.script_title,
+    script_content: draft.script_content,
+    script_type: draft.script_type,
+    tags: draft.tags,
+    recommendation_level: item.fit_level,
+    create_time: new Date(),
+  });
+  return scriptId;
+}
+
 export async function createLivePlan(liveId: string, productIds?: string[]) {
   const session = await knex('LiveSession')
     .join('Anchor', 'LiveSession.anchor_id', 'Anchor.anchor_id')
@@ -316,23 +423,27 @@ export async function createLivePlan(liveId: string, productIds?: string[]) {
     });
   }
 
-  const itemRows = await Promise.all(planItems.map(async (item) => ({
-    item_id: id('LPI'),
-    plan_id: planId,
-    live_id: liveId,
-    product_id: item.product_id,
-    anchor_id: item.anchor_id,
-    sort_order: item.sort_order,
-    plan_role: item.plan_role,
-    suggested_minutes: item.suggested_minutes,
-    target_gmv: item.target_gmv,
-    target_orders: item.target_orders,
-    fit_score: item.fit_score,
-    fit_level: item.fit_level,
-    script_id: await findScriptId(liveId, session.anchor_id, item.product_id),
-    plan_reason: item.plan_reason,
-    risk_notes: fits.find((fit: AnchorProductFitResult) => fit.product_id === item.product_id)?.risk_notes || '暂无明显风险。',
-  })));
+  const itemRows = await Promise.all(planItems.map(async (item) => {
+    const row = {
+      item_id: id('LPI'),
+      plan_id: planId,
+      live_id: liveId,
+      product_id: item.product_id,
+      anchor_id: item.anchor_id,
+      sort_order: item.sort_order,
+      plan_role: item.plan_role,
+      suggested_minutes: item.suggested_minutes,
+      target_gmv: item.target_gmv,
+      target_orders: item.target_orders,
+      fit_score: item.fit_score,
+      fit_level: item.fit_level,
+      script_id: null as string | null,
+      plan_reason: item.plan_reason,
+      risk_notes: fits.find((fit: AnchorProductFitResult) => fit.product_id === item.product_id)?.risk_notes || '暂无明显风险。',
+    };
+    row.script_id = await ensurePlanItemScript(session, row);
+    return row;
+  }));
   await knex('LivePlanItem').insert(itemRows);
 
   return getLivePlan(planId);
@@ -353,6 +464,49 @@ export async function confirmLivePlan(idOrLiveId: string) {
   await knex.transaction(async (trx) => {
     await trx('LivePlan').where('plan_id', existing.plan_id).update(patch.plan);
     await trx('LiveSession').where('live_id', existing.live_id).update(patch.liveSession);
+  });
+
+  return getLivePlan(existing.plan_id);
+}
+
+export async function updateLivePlan(idOrLiveId: string, payload: {
+  plan_goal?: string;
+  items?: PlanItemUpdateInput[];
+}) {
+  const existing = await knex('LivePlan')
+    .join('LiveSession', 'LivePlan.live_id', 'LiveSession.live_id')
+    .where((builder) => {
+      builder.where('LivePlan.plan_id', idOrLiveId).orWhere('LivePlan.live_id', idOrLiveId);
+    })
+    .select('LivePlan.plan_id', 'LivePlan.live_id', 'LiveSession.live_status')
+    .first();
+  if (!existing) throw new Error('直播计划不存在');
+  if (!isPlannableLiveStatus(existing.live_status)) throw new Error('进行中或已结束场次不能修改带货计划');
+
+  const patch = buildPlanItemUpdatePatch(payload.items || []);
+  if (patch.items.length === 0) throw new Error('至少保留一个计划商品');
+
+  await knex.transaction(async (trx) => {
+    await trx('LivePlan').where('plan_id', existing.plan_id).update({
+      plan_goal: textValue(payload.plan_goal, '人工调整后的场次带货计划。'),
+      target_gmv: patch.summary.target_gmv,
+      target_orders: patch.summary.target_orders,
+      total_planned_minutes: patch.summary.total_planned_minutes,
+      updated_time: new Date(),
+    });
+
+    await Promise.all(patch.items.map((item) => trx('LivePlanItem')
+      .where({ plan_id: existing.plan_id, item_id: item.item_id })
+      .update({
+        sort_order: item.sort_order,
+        plan_role: item.plan_role,
+        suggested_minutes: item.suggested_minutes,
+        target_gmv: item.target_gmv,
+        target_orders: item.target_orders,
+        plan_reason: item.plan_reason,
+        risk_notes: item.risk_notes,
+        script_id: item.script_id,
+      })));
   });
 
   return getLivePlan(existing.plan_id);
