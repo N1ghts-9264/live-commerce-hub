@@ -4,11 +4,11 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { liveSessionsAPI } from '../api'
 import PageHeader from '../components/PageHeader.vue'
-import { appendRealtimePoint, secondsSince } from '../utils/realtimeSeries'
+import KpiCard from '../components/KpiCard.vue'
+import { appendRealtimePoint, secondsSince, parseElapsedSeconds, formatElapsed, type RealtimePoint } from '../utils/realtimeSeries'
 import { Line, Doughnut } from 'vue-chartjs'
 import {
   Chart as ChartJS,
-  CategoryScale,
   LinearScale,
   PointElement,
   LineElement,
@@ -18,7 +18,7 @@ import {
   Filler,
 } from 'chart.js'
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Tooltip, Legend, Filler)
+ChartJS.register(LinearScale, PointElement, LineElement, ArcElement, Tooltip, Legend, Filler)
 
 const route = useRoute()
 const auth = useAuthStore()
@@ -40,10 +40,9 @@ const signals = ref<any[]>([])
 const connected = ref(false)
 const currentProduct = ref<{ product_name: string; price: number } | null>(null)
 
-// History arrays for charts (keep last 60 data points)
-const onlineHistory = ref<number[]>([])
-const timeLabels = ref<string[]>([])
-const gmvHistory = ref<number[]>([])
+// History arrays for charts — each point stores real elapsed seconds as X
+const onlineHistory = ref<RealtimePoint[]>([])
+const gmvHistory = ref<RealtimePoint[]>([])
 
 function formatCurrency(v: number) { return v >= 10000 ? '¥' + (v / 10000).toFixed(1) + '万' : '¥' + v.toFixed(0) }
 function formatDuration(sec: number) {
@@ -79,27 +78,39 @@ function connectSSE() {
     currentProduct.value = snapshot.currentProduct || currentProduct.value
     insight.value = snapshot.insight || insight.value
     scriptRecommendation.value = snapshot.scriptRecommendation || scriptRecommendation.value
-    timeLabels.value = Array.isArray(snapshot.series?.labels) ? snapshot.series.labels : []
-    onlineHistory.value = Array.isArray(snapshot.series?.online) ? snapshot.series.online : []
-    gmvHistory.value = Array.isArray(snapshot.series?.gmv) ? snapshot.series.gmv : []
+    // Reconstruct {x: elapsedSeconds, y: value} from snapshot arrays
+    const snapLabels = Array.isArray(snapshot.series?.labels) ? snapshot.series.labels : []
+    const snapOnline = Array.isArray(snapshot.series?.online) ? snapshot.series.online : []
+    const snapGmv = Array.isArray(snapshot.series?.gmv) ? snapshot.series.gmv : []
+    onlineHistory.value = snapOnline.map((y, i) => ({
+      x: snapLabels[i] ? parseElapsedSeconds(snapLabels[i]) : i * 6,
+      y,
+    }))
+    gmvHistory.value = snapGmv.map((y, i) => ({
+      x: snapLabels[i] ? parseElapsedSeconds(snapLabels[i]) : i * 6,
+      y,
+    }))
     startLocalTimer()
   })
   es.addEventListener('metrics', (e) => {
     const nextMetrics = JSON.parse(e.data)
     if (!simulationStartMs.value) simulationStartMs.value = Date.now() - (Number(nextMetrics.duration) || 0) * 1000
     metrics.value = { ...nextMetrics, duration: secondsSince(simulationStartMs.value) }
-    const nextSeries = appendRealtimePoint({
-      labels: timeLabels.value,
-      online: onlineHistory.value,
-      gmv: gmvHistory.value,
-      label: new Date().toLocaleTimeString(),
-      onlineValue: metrics.value.online,
-      gmvValue: metrics.value.gmv,
-      maxPoints: 60,
+    const elapsed = metrics.value.duration
+    const onlineResult = appendRealtimePoint({
+      points: onlineHistory.value,
+      elapsedSeconds: elapsed,
+      value: metrics.value.online,
+      maxPoints: 100,
     })
-    timeLabels.value = nextSeries.labels
-    onlineHistory.value = nextSeries.online
-    gmvHistory.value = nextSeries.gmv
+    const gmvResult = appendRealtimePoint({
+      points: gmvHistory.value,
+      elapsedSeconds: elapsed,
+      value: metrics.value.gmv,
+      maxPoints: 100,
+    })
+    onlineHistory.value = onlineResult.points
+    gmvHistory.value = gmvResult.points
   })
   es.addEventListener('order', (e) => {
     const order = JSON.parse(e.data)
@@ -159,24 +170,37 @@ function stopSim() {
   })
 }
 
+const copyMsg = ref('')
+let copyMsgTimer: ReturnType<typeof setTimeout> | null = null
+
 function copyScript(text: string) {
-  navigator.clipboard.writeText(text).then(() => { alert('话术已复制到剪贴板！') })
+  navigator.clipboard.writeText(text).then(() => {
+    copyMsg.value = '话术已复制到剪贴板'
+    if (copyMsgTimer) clearTimeout(copyMsgTimer)
+    copyMsgTimer = setTimeout(() => { copyMsg.value = '' }, 2000)
+  })
 }
 
-// Chart data
-const onlineChartData = computed(() => ({
-  labels: timeLabels.value,
-  datasets: [{
-    label: '在线人数',
-    data: onlineHistory.value,
-    borderColor: '#C41E3A',
-    backgroundColor: 'rgba(196, 30, 58, 0.06)',
-    fill: true,
-    tension: 0.3,
-    pointRadius: 0,
-    borderWidth: 2,
-  }],
-}))
+// Chart data — only show last 5 minutes, so Chart.js auto-fits
+// the scale to the visible data without extra padding on either side.
+const onlineChartData = computed(() => {
+  const cutoff = Math.max(0, (metrics.value.duration || 0) - 300)
+  const visible = cutoff > 0
+    ? onlineHistory.value.filter((p) => p.x >= cutoff)
+    : onlineHistory.value
+  return {
+    datasets: [{
+      label: '在线人数',
+      data: visible,
+      borderColor: '#C41E3A',
+      backgroundColor: 'rgba(196, 30, 58, 0.06)',
+      fill: true,
+      tension: 0.3,
+      pointRadius: 0,
+      borderWidth: 2,
+    }],
+  }
+})
 
 const sentimentChartData = computed(() => ({
   labels: ['正面', '中性', '负面'],
@@ -187,15 +211,46 @@ const sentimentChartData = computed(() => ({
   }],
 }))
 
-const chartOptions = {
+const chartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
+  layout: { padding: { left: 0, right: 0, top: 8, bottom: 0 } },
   plugins: { legend: { display: false } },
   scales: {
-    x: { display: true, grid: { display: false }, ticks: { maxTicksLimit: 6, font: { size: 10 } } },
-    y: { display: true, grid: { color: 'rgba(200,194,179,0.3)' }, ticks: { font: { size: 10 } } },
+    x: {
+      type: 'linear' as const,
+      bounds: 'data' as const,
+      display: true,
+      grid: { display: false },
+      title: {
+        display: true,
+        text: '直播时长 (近5分钟)',
+        font: { size: 10 },
+        color: 'var(--ink-soft)',
+      },
+      ticks: {
+        maxTicksLimit: 6,
+        font: { size: 10 },
+        callback: (val: string | number) => {
+          const seconds = typeof val === 'number' ? val : Number(val)
+          if (!Number.isFinite(seconds) || seconds < 0) return ''
+          return formatElapsed(seconds)
+        },
+      },
+    },
+    y: {
+      display: true,
+      grid: { color: 'rgba(200,194,179,0.3)' },
+      title: {
+        display: true,
+        text: '在线人数',
+        font: { size: 10 },
+        color: 'var(--ink-soft)',
+      },
+      ticks: { font: { size: 10 } },
+    },
   },
-}
+}))
 
 const doughnutOptions = {
   responsive: true,
@@ -220,6 +275,7 @@ onMounted(async () => {
 onUnmounted(() => {
   if (eventSource.value) eventSource.value.close()
   stopLocalTimer()
+  if (copyMsgTimer) clearTimeout(copyMsgTimer)
 })
 </script>
 
@@ -250,23 +306,11 @@ onUnmounted(() => {
       </div>
 
       <!-- KPI Row -->
-      <div class="live-kpi-row">
-        <div class="kpi-card">
-          <div class="kpi-label">在线人数</div>
-          <div class="kpi-value">{{ metrics.online.toLocaleString() }}</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">累计订单</div>
-          <div class="kpi-value">{{ metrics.totalOrders.toLocaleString() }}</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">累计GMV</div>
-          <div class="kpi-value gmv">{{ formatCurrency(metrics.gmv) }}</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">峰值在线</div>
-          <div class="kpi-value">{{ metrics.peakOnline.toLocaleString() }}</div>
-        </div>
+      <div class="monitor-kpi-row">
+        <KpiCard label="在线人数" :value="metrics.online.toLocaleString()" />
+        <KpiCard label="累计订单" :value="metrics.totalOrders.toLocaleString()" />
+        <KpiCard label="累计 GMV" :value="formatCurrency(metrics.gmv)" />
+        <KpiCard label="峰值在线" :value="metrics.peakOnline.toLocaleString()" />
       </div>
 
       <!-- Charts Row -->
@@ -359,10 +403,11 @@ onUnmounted(() => {
                 <button class="btn small primary" @click="copyScript(scriptRecommendation.scriptSnippet)">复制话术</button>
                 <button class="btn small" @click="scriptRecommendation = null">换一条</button>
               </div>
+              <div v-if="copyMsg" class="copy-toast">{{ copyMsg }}</div>
             </div>
             <div v-else class="script-empty">
               等待信号触发...<br/>
-              <span style="font-size:11px;">检测到价格质疑/购买意向/负面情绪时自动推送</span>
+              <span style="font-size:11px;">检测到价格质疑/购买意向/产品咨询/负面情绪/冷场时自动推送</span>
             </div>
 
             <div v-if="signals.length > 0" style="margin-top:16px;">
@@ -395,7 +440,15 @@ onUnmounted(() => {
   background: var(--info-soft); color: var(--info);
   padding: 4px 12px; font-size: 12px; font-weight: 600; border-radius: 2px;
 }
-.live-kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-md); margin-bottom: var(--space-lg); }
+.monitor-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+.monitor-kpi-row :deep(.kpi-card) { padding: 14px 18px 14px; }
+.monitor-kpi-row :deep(.kpi-label) { font-size: 10px; margin-bottom: 4px; letter-spacing: 0.06em; }
+.monitor-kpi-row :deep(.kpi-value) { font-size: 28px; }
 
 /* Order items */
 .order-item {
@@ -426,4 +479,14 @@ onUnmounted(() => {
 .signal-item { font-size: 12px; padding: 4px 0; border-bottom: 1px solid var(--rule-soft); }
 .signal-time { font-family: var(--font-mono); color: var(--ink-soft); }
 .signal-name { color: var(--info); margin-left: 8px; }
+
+.copy-toast {
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  text-align: center;
+}
 </style>

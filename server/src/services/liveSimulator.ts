@@ -56,6 +56,7 @@ interface SimulatorState {
   lastSentimentStats: { positive: number; neutral: number; negative: number };
   lastInsight: any | null;
   lastScriptRecommendation: any | null;
+  lastDbSyncTime: number;
 }
 
 const sessions: Map<string, SimulatorState> = new Map();
@@ -108,23 +109,33 @@ function remember<T>(items: T[], item: T, max: number) {
   if (items.length > max) items.pop();
 }
 
+function formatMMSS(totalSeconds: number): string {
+  const m = Math.floor(totalSeconds / 60);
+  const s = Math.floor(totalSeconds % 60);
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
 function pushSeriesPoint(state: SimulatorState) {
-  state.timeLabels.push(new Date().toLocaleTimeString());
+  const duration = Math.floor((Date.now() - state.startTime.getTime()) / 1000);
+  state.timeLabels.push(formatMMSS(duration));
   state.onlineHistory.push(state.online);
   state.gmvHistory.push(Math.round(state.gmv * 100) / 100);
-  if (state.timeLabels.length > 60) state.timeLabels.shift();
-  if (state.onlineHistory.length > 60) state.onlineHistory.shift();
-  if (state.gmvHistory.length > 60) state.gmvHistory.shift();
+  // Keep last 500 points — covers ~83 min at 10s intervals,
+  // so clients connecting mid-session get full-history snapshots.
+  if (state.timeLabels.length > 500) state.timeLabels.shift();
+  if (state.onlineHistory.length > 500) state.onlineHistory.shift();
+  if (state.gmvHistory.length > 500) state.gmvHistory.shift();
 }
 
 export function createWarmupSeries(nowMs: number, seconds: number, baseOnline: number, gmv: number) {
   const labels: string[] = [];
   const online: number[] = [];
   const gmvValues: number[] = [];
-  const points = 6;
+  const points = 30;
   for (let index = points - 1; index >= 0; index--) {
-    const pointTime = new Date(nowMs - index * (seconds / (points - 1)) * 1000);
-    labels.push(pointTime.toLocaleTimeString());
+    // Spread labels evenly across the preload duration (in seconds)
+    const elapsedSec = Math.round(seconds * (1 - (index / (points - 1))));
+    labels.push(formatMMSS(elapsedSec));
     online.push(Math.max(50, Math.round(baseOnline + Math.sin(index + baseOnline) * 120 - index * 18)));
     gmvValues.push(Math.max(0, Math.round((gmv * (points - index)) / points)));
   }
@@ -235,17 +246,26 @@ export async function startSimulation(liveId: string, options: { preloadSeconds?
   const productSkus = await loadSessionSKUs(liveId, category);
   const firstProduct = productSkus[Math.floor(Math.random() * productSkus.length)];
   const preloadSeconds = options.preloadSeconds ?? 0;
+  const hasPreload = preloadSeconds > 0;
   const startedAt = resolveSimulationStartTime({
     preloadSeconds,
     preserveStartTime: options.preserveStartTime,
     sessionStartTime: session.start_time,
   });
-  const baseOnline = 500 + Math.floor(Math.random() * 2000);
-  const online = Math.max(50, baseOnline + Math.floor(Math.random() * 400));
-  const warmupGmv = Math.round((firstProduct?.sale_price || 99) * (2 + Math.floor(Math.random() * 8)));
-  const warmupSeries = createWarmupSeries(Date.now(), preloadSeconds, online, warmupGmv);
-  const warmChats = buildWarmupChats(category, firstProduct);
-  const warmOrders = buildWarmupOrders(firstProduct, warmupGmv);
+  // Fresh starts begin with realistic low viewership; resumed sessions
+  // carry their natural base via preload data (buildWarmupChats/Orders).
+  const baseOnline = hasPreload ? 500 + Math.floor(Math.random() * 2000) : Math.floor(Math.random() * 55);
+  const online = Math.max(5, baseOnline + Math.floor(Math.random() * (hasPreload ? 400 : 30)));
+
+  // Warmup data only makes sense when resuming a session that has been running.
+  // For fresh starts (preloadSeconds=0), begin with empty history so the chart
+  // shows a single point and builds naturally over time.
+  const warmupGmv = hasPreload ? Math.round((firstProduct?.sale_price || 99) * (2 + Math.floor(Math.random() * 8))) : 0;
+  const warmupSeries = hasPreload
+    ? createWarmupSeries(Date.now(), preloadSeconds, online, warmupGmv)
+    : { labels: [] as string[], online: [] as number[], gmv: [] as number[] };
+  const warmChats = hasPreload ? buildWarmupChats(category, firstProduct) : [];
+  const warmOrders = hasPreload ? buildWarmupOrders(firstProduct, warmupGmv) : [];
 
   const state: SimulatorState = {
     liveId,
@@ -255,11 +275,12 @@ export async function startSimulation(liveId: string, options: { preloadSeconds?
     baseOnline,
     totalOrders: warmOrders.length,
     gmv: warmOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0),
-    peakOnline: Math.max(...warmupSeries.online, online),
+    peakOnline: hasPreload ? Math.max(...warmupSeries.online, online) : online,
     startTime: startedAt,
     pendingChats: [],
     lastAnalysisTime: Date.now(),
     lastInsightTime: Date.now(),
+    lastDbSyncTime: Date.now(),
     sentimentCounts: { positive: 0, neutral: 0, negative: 0 },
     category,
     productSkus,
@@ -278,10 +299,26 @@ export async function startSimulation(liveId: string, options: { preloadSeconds?
   };
 
   const update: any = { live_status: '\u8fdb\u884c\u4e2d' };
-  if (!options.preserveStartTime) update.start_time = startedAt;
+  if (!options.preserveStartTime) {
+    update.start_time = startedAt;
+    // Fresh start: reset counters so the LiveSessionsPage doesn't
+    // show stale peak / sales from a previous simulation run.
+    update.online_peak = online;
+    update.total_sales = 0;
+  }
   await knex('LiveSession').where('live_id', liveId).update(update);
 
   sessions.set(liveId, state);
+
+  // Push the very first data point immediately so the chart shows data right away
+  pushSeriesPoint(state);
+  broadcast(liveId, 'metrics', {
+    online: state.online,
+    totalOrders: state.totalOrders,
+    gmv: Math.round(state.gmv * 100) / 100,
+    peakOnline: state.peakOnline,
+    duration: 0,
+  });
 
   // Send initial current product
   broadcast(liveId, 'current_product', {
@@ -501,18 +538,47 @@ async function tick(state: SimulatorState) {
     state.lastSentimentStats = sentimentStats;
     broadcast(state.liveId, 'sentiment', sentimentStats);
 
-    // Check signal triggers
+    // Check signal triggers \u2014 based on LLM/mock analysis results (semantic labels)
+    const labelCounts: Record<string, number> = {};
+    for (const r of results) {
+      const label = r.semantic_label || '\u5176\u4ed6';
+      labelCounts[label] = (labelCounts[label] || 0) + 1;
+    }
+    const totalResults = results.length || 1;
     const recentText = state.recentChats.join('; ');
-    if (recentText.includes('\u8d35') || recentText.includes('\u4fbf\u5b9c') || recentText.includes('\u4ef7\u683c')) {
-      const script = await recommendScript('\u4ef7\u683c\u8d28\u7591', state.currentProduct?.product_name || '\u70ed\u5356\u5546\u54c1', state.currentProduct?.sale_price || 99, recentText, sentimentStats);
+
+    // Priority-ordered signal detection:
+    // 1. Price questioning (highest urgency \u2014 lose the sale if not handled)
+    // 2. Negative sentiment surge (>35% or many\u552e\u540e\u62b1\u6028)
+    // 3. Purchase intent spike (capitalize on buying mood)
+    // 4. Product inquiry (answer to convert)
+    // 5. Cold period (re-engage audience)
+    let signal: string | null = null;
+    let reason = '';
+
+    if ((labelCounts['\u4ef7\u683c\u8d28\u7591'] || 0) >= 2) {
+      signal = '\u4ef7\u683c\u8d28\u7591';
+      reason = `${labelCounts['\u4ef7\u683c\u8d28\u7591']}\u6761\u4ef7\u683c\u8d28\u7591\u5f39\u5e55\u9700\u56de\u5e94`;
+    } else if (sentimentStats.negative > 35 || (labelCounts['\u552e\u540e\u62b1\u6028'] || 0) >= 3) {
+      signal = '\u8d1f\u9762\u60c5\u7eea';
+      reason = sentimentStats.negative > 35 ? '\u8d1f\u9762\u60c5\u7eea\u5360\u6bd4\u8d85\u8fc735%' : '\u552e\u540e\u62b1\u6028\u589e\u591a';
+    } else if ((labelCounts['\u8d2d\u4e70\u610f\u5411'] || 0) >= 2) {
+      signal = '\u8d2d\u4e70\u610f\u5411';
+      reason = `${labelCounts['\u8d2d\u4e70\u610f\u5411']}\u6761\u8d2d\u4e70\u610f\u5411\u53ef\u4fc3\u5355`;
+    } else if ((labelCounts['\u54a8\u8be2'] || 0) >= 3) {
+      signal = '\u4ea7\u54c1\u54a8\u8be2';
+      reason = `${labelCounts['\u54a8\u8be2']}\u6761\u54a8\u8be2\u9700\u7edf\u4e00\u56de\u590d`;
+    } else if (totalResults <= 3 && sentimentStats.neutral >= 70) {
+      signal = '\u51b7\u573a';
+      reason = '\u5f39\u5e55\u91cf\u4f4e\u8ff7\uff0c\u9700\u6fc0\u6d3b\u6c1b\u56f4';
+    }
+
+    if (signal) {
+      const productName = state.currentProduct?.product_name || '\u70ed\u5356\u5546\u54c1';
+      const price = state.currentProduct?.sale_price || 99;
+      const script = await recommendScript(signal, productName, price, recentText, sentimentStats);
       if (script) {
-        state.lastScriptRecommendation = { trigger: '\u4ef7\u683c\u8d28\u7591', scriptSnippet: script, reason: '\u68c0\u6d4b\u5230\u4ef7\u683c\u76f8\u5173\u8ba8\u8bba\u589e\u591a' };
-        broadcast(state.liveId, 'script_recommendation', state.lastScriptRecommendation);
-      }
-    } else if (sentimentStats.negative > 35) {
-      const script = await recommendScript('\u8d1f\u9762\u60c5\u7eea', state.currentProduct?.product_name || '\u70ed\u5356\u5546\u54c1', state.currentProduct?.sale_price || 99, recentText, sentimentStats);
-      if (script) {
-        state.lastScriptRecommendation = { trigger: '\u8d1f\u9762\u60c5\u7eea', scriptSnippet: script, reason: '\u8d1f\u9762\u60c5\u7eea\u5360\u6bd4\u8d85\u8fc735%' };
+        state.lastScriptRecommendation = { trigger: signal, scriptSnippet: script, reason };
         broadcast(state.liveId, 'script_recommendation', state.lastScriptRecommendation);
       }
     }
@@ -541,4 +607,18 @@ async function tick(state: SimulatorState) {
     peakOnline: state.peakOnline,
     duration: Math.floor((now - state.startTime.getTime()) / 1000),
   });
+
+  // 8. Periodic DB sync — persist online_peak and total_sales so the
+  //    LiveSessionsPage shows live data, not just stale pre-simulation values.
+  if (now - state.lastDbSyncTime > 30_000) {
+    state.lastDbSyncTime = now;
+    try {
+      await knex('LiveSession').where('live_id', state.liveId).update({
+        online_peak: state.peakOnline,
+        total_sales: Math.round(state.gmv * 100) / 100,
+      });
+    } catch (_err) {
+      // Non-critical — next sync will retry.
+    }
+  }
 }

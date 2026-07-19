@@ -17,6 +17,9 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = 20
 const statusFilter = ref('')
+const search = ref('')
+const sortBy = ref('')
+const sortDir = ref<'asc' | 'desc'>('asc')
 const loading = ref(false)
 const showSuggestions = ref(false)
 
@@ -181,10 +184,22 @@ async function saveNewProductPurchase() {
   } catch (e: any) { alert(e.response?.data?.message || '新品采购保存失败') }
 }
 
+function doSearch() {
+  page.value = 1
+  load()
+}
+
+function handleSortChange(state: { key: string; direction: string } | null) {
+  if (!state) return
+  sortBy.value = state.key
+  sortDir.value = state.direction as 'asc' | 'desc'
+  load()
+}
+
 async function load() {
   loading.value = true
   try {
-    const { data } = await purchasesAPI.list({ page: page.value, pageSize, status: statusFilter.value })
+    const { data } = await purchasesAPI.list({ page: page.value, pageSize, status: statusFilter.value, search: search.value, sortBy: sortBy.value, sortDir: sortDir.value })
     purchases.value = data.data
     total.value = data.total
   } finally { loading.value = false }
@@ -244,23 +259,23 @@ onMounted(async () => {
 })
 
 const columns = [
-  { key: 'product_name', label: '商品' },
-  { key: 'sku_name', label: 'SKU' },
-  { key: 'supplier_name', label: '供应商' },
-  { key: 'purchase_quantity', label: '数量' },
-  { key: 'purchase_price', label: '采购价' },
-  { key: 'purchase_status', label: '状态' },
-  { key: 'expected_arrival_time', label: '预计到货' },
+  { key: 'product_name', label: '商品', width: '24%' },
+  { key: 'sku_name', label: 'SKU', width: '20%' },
+  { key: 'supplier_name', label: '供应商', width: '14%' },
+  { key: 'purchase_quantity', label: '数量', width: '8%' },
+  { key: 'purchase_price', label: '采购价', width: '8%' },
+  { key: 'purchase_status', label: '状态', width: '10%' },
+  { key: 'expected_arrival_time', label: '预计到货', width: '16%' },
 ]
 
 const sugColumns = [
-  { key: 'product_name', label: '商品' },
-  { key: 'sku_name', label: 'SKU' },
-  { key: 'warehouse_name', label: '仓库' },
-  { key: 'current_stock', label: '当前库存' },
-  { key: 'safety_stock', label: '安全库存' },
-  { key: 'suggested_quantity', label: '建议采购' },
-  { key: 'stock_risk_level', label: '风险等级' },
+  { key: 'product_name', label: '商品', width: '20%' },
+  { key: 'sku_name', label: 'SKU', width: '18%' },
+  { key: 'warehouse_name', label: '仓库', width: '12%' },
+  { key: 'current_stock', label: '当前库存', width: '10%' },
+  { key: 'safety_stock', label: '安全库存', width: '10%' },
+  { key: 'suggested_quantity', label: '建议采购', width: '10%' },
+  { key: 'stock_risk_level', label: '风险等级', width: '10%' },
 ]
 </script>
 
@@ -268,6 +283,8 @@ const sugColumns = [
   <PageHeader title="采购管理" subtitle="采购单管理与智能建议" />
   <div class="page-body">
     <div class="toolbar">
+      <input v-model="search" class="input" placeholder="搜索商品名称..." @keyup.enter="doSearch()" style="width:200px;" />
+      <button class="btn" @click="doSearch()">搜索</button>
       <select v-model="statusFilter" class="form-select" style="width:auto;" @change="load()">
         <option value="">全部状态</option>
         <option v-for="s in statusFlow" :key="s" :value="s">{{ s }}</option>
@@ -295,7 +312,7 @@ const sugColumns = [
             <span style="font-weight:600;">{{ value }}</span>
           </template>
           <template #cell-stock_risk_level="{ value }">
-            <StatusBadge :status="value" :type="value === '紧急' || value === '高' ? 'danger' : value === '中' ? 'warning' : 'info'" />
+            <StatusBadge :status="value" :type="value === '高' ? 'danger' : value === '中' ? 'warning' : 'info'" />
           </template>
         </DataTable>
         <Pagination v-if="sugTotal > sugPageSize" :page="sugPage" :total="sugTotal" :page-size="sugPageSize" @change="changeSugPage" />
@@ -303,7 +320,7 @@ const sugColumns = [
     </div>
 
     <!-- Main table -->
-    <DataTable :columns="columns" :data="purchases" :loading="loading" @row-click="openDetail">
+    <DataTable :columns="columns" :data="purchases" :loading="loading" @row-click="openDetail" @sort-change="handleSortChange">
       <template #cell-product_name="{ value }">
         <span style="font-weight:600;">{{ value }}</span>
       </template>

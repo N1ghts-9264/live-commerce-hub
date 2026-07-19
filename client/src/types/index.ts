@@ -211,15 +211,24 @@ export interface LoginResponse {
   permissions: string[]
 }
 
+export interface DashboardScope {
+  type: 'anchor' | 'global'
+  anchorName?: string
+  anchorId?: string
+}
+
 export interface DashboardSummary {
   totalGmv: number
   totalOrders: number
   avgConversionRate: number
   totalProducts: number
   stockAlertCount: number
+  dailyAvgGmv: number
+  dailyAvgOrders: number
   gmvChange: number
   ordersChange: number
   conversionChange: number
+  scope?: DashboardScope
   period?: {
     label: string
     startDate: string

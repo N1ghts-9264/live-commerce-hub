@@ -1,10 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuid } from 'uuid';
 import knex from '../db/knex';
-import { authenticate } from '../middleware/auth';
+import { authenticate, authorize, ROLES } from '../middleware/auth';
 
 const router = Router();
 router.use(authenticate);
+router.use(authorize(ROLES.MANAGEMENT, ROLES.OPERATIONS, ROLES.PURCHASING, ROLES.WAREHOUSE, ROLES.ADMIN));
 
 // GET /api/products
 router.get('/', async (req: Request, res: Response) => {
@@ -87,11 +88,12 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const id = uuid().replace(/-/g, '').substring(0, 16);
+    const { is_new, ...body } = req.body; // 排除前端 is_new 标记（数据库无此列）
     const product = {
       product_id: id,
-      ...req.body,
-      gross_profit_rate: req.body.cost_price && req.body.sale_price
-        ? parseFloat((((req.body.sale_price - req.body.cost_price) / req.body.sale_price) * 100).toFixed(2))
+      ...body,
+      gross_profit_rate: body.cost_price && body.sale_price
+        ? parseFloat((((body.sale_price - body.cost_price) / body.sale_price) * 100).toFixed(2))
         : null,
       create_time: new Date(),
     };
@@ -105,7 +107,7 @@ router.post('/', async (req: Request, res: Response) => {
 // PUT /api/products/:id
 router.put('/:id', async (req: Request, res: Response) => {
   try {
-    const update = { ...req.body };
+    const { is_new, ...update } = req.body; // 排除前端 is_new 标记（数据库无此列）
     if (req.body.cost_price && req.body.sale_price) {
       update.gross_profit_rate = parseFloat((((req.body.sale_price - req.body.cost_price) / req.body.sale_price) * 100).toFixed(2));
     }

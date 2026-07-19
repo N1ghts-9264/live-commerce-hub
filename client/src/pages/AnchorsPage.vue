@@ -19,6 +19,8 @@ const page = ref(1)
 const pageSize = 20
 const search = ref('')
 const levelFilter = ref('')
+const sortBy = ref('')
+const sortDir = ref<'asc' | 'desc'>('asc')
 const loading = ref(false)
 
 const showModal = ref(false)
@@ -114,10 +116,18 @@ const chartOptions = {
 const levels = ['S', 'A', 'B', 'C']
 const platforms = ['抖音', '快手']
 
+function handleSortChange(state: { key: string; direction: string } | null) {
+  if (!state) return
+  sortBy.value = state.key
+  sortDir.value = state.direction as 'asc' | 'desc'
+  page.value = 1
+  load()
+}
+
 async function load() {
   loading.value = true
   try {
-    const { data } = await anchorsAPI.list({ page: page.value, pageSize, search: search.value, level: levelFilter.value })
+    const { data } = await anchorsAPI.list({ page: page.value, pageSize, search: search.value, level: levelFilter.value, sortBy: sortBy.value, sortDir: sortDir.value })
     anchors.value = data.data
     total.value = data.total
   } finally { loading.value = false }
@@ -188,15 +198,15 @@ function isTop(val: number, metric: string) { return compareHighlights.value[met
 onMounted(() => load())
 
 const columns = [
-  { key: 'compare', label: '对比' },
-  { key: 'anchor_name', label: '主播姓名' },
-  { key: 'gender', label: '性别' },
-  { key: 'account_platform', label: '平台' },
-  { key: 'fan_count', label: '粉丝数' },
-  { key: 'specialization', label: '擅长品类' },
-  { key: 'anchor_level', label: '等级' },
-  { key: 'status', label: '状态' },
-  { key: 'actions', label: '操作' },
+  { key: 'compare', label: '对比', width: '6%' },
+  { key: 'anchor_name', label: '主播姓名', width: '14%' },
+  { key: 'gender', label: '性别', width: '6%' },
+  { key: 'account_platform', label: '平台', width: '8%' },
+  { key: 'fan_count', label: '粉丝数', width: '10%' },
+  { key: 'specialization', label: '擅长品类', width: '12%' },
+  { key: 'anchor_level', label: '等级', width: '7%' },
+  { key: 'status', label: '状态', width: '7%' },
+  { key: 'actions', label: '操作', width: '16%' },
 ]
 </script>
 
@@ -217,7 +227,7 @@ const columns = [
       <button class="btn" @click="load()">刷新</button>
     </div>
 
-    <DataTable :columns="columns" :data="anchors" :loading="loading">
+    <DataTable :columns="columns" :data="anchors" :loading="loading" @sort-change="handleSortChange">
       <template #cell-compare="{ row }">
         <span class="compare-check" :class="{ checked: selectedIds.has(row.anchor_id) }" @click="toggleSelect(row.anchor_id)">
           <span v-if="selectedIds.has(row.anchor_id)" class="compare-check-mark">&#10003;</span>

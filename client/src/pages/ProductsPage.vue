@@ -23,6 +23,7 @@ const editing = ref<Product | null>(null)
 const form = ref({
   product_name: '', category: '', brand: '', cost_price: 0,
   sale_price: 0, product_status: '在售', supplier_id: '', description: '', selling_points: '',
+  is_new: false,
 })
 
 const categories = ['女装', '美妆', '箱包', '运动户外', '零食', '家居用品', '母婴', '数码', '食品饮料']
@@ -73,9 +74,17 @@ function toggleSort(field: string) {
   load()
 }
 
+function handleSortChange(state: { key: string; direction: string } | null) {
+  if (!state) return
+  sortBy.value = state.key
+  sortDir.value = state.direction as 'asc' | 'desc'
+  page.value = 1
+  load()
+}
+
 function openCreate() {
   editing.value = null
-  form.value = { product_name: '', category: '', brand: '', cost_price: 0, sale_price: 0, product_status: '在售', supplier_id: '', description: '', selling_points: '' }
+  form.value = { product_name: '', category: '', brand: '', cost_price: 0, sale_price: 0, product_status: '在售', supplier_id: '', description: '', selling_points: '', is_new: false }
   showModal.value = true
 }
 
@@ -86,16 +95,25 @@ function openEdit(p: Product) {
     cost_price: p.cost_price, sale_price: p.sale_price,
     product_status: p.product_status, supplier_id: p.supplier_id || '',
     description: p.description || '', selling_points: p.selling_points || '',
+    is_new: p.product_status === '待评估',
   }
   showModal.value = true
 }
 
 async function save() {
   try {
+    // 根据"是否新品"自动调整商品状态
+    if (form.value.is_new) {
+      form.value.product_status = '待评估'
+    } else if (form.value.product_status === '待评估') {
+      form.value.product_status = '在售'
+    }
+    // 构建提交数据，排除 is_new（数据库无此列）
+    const { is_new, ...payload } = form.value
     if (editing.value) {
-      await productsAPI.update(editing.value.product_id, form.value)
+      await productsAPI.update(editing.value.product_id, payload)
     } else {
-      await productsAPI.create(form.value)
+      await productsAPI.create(payload)
     }
     showModal.value = false
     await load()
@@ -121,15 +139,15 @@ onMounted(() => {
 })
 
 const columns = [
-  { key: 'product_name', label: '商品名称' },
-  { key: 'category', label: '分类' },
-  { key: 'brand', label: '品牌' },
-  { key: 'supplier_name', label: '供应商' },
-  { key: 'cost_price', label: '成本价' },
-  { key: 'sale_price', label: '售价' },
-  { key: 'gross_profit_rate', label: '毛利率' },
-  { key: 'product_status', label: '状态' },
-  { key: 'actions', label: '操作' },
+  { key: 'product_name', label: '商品名称', width: '23%' },
+  { key: 'category', label: '分类', width: '7%' },
+  { key: 'brand', label: '品牌', width: '16%' },
+  { key: 'supplier_name', label: '供应商', width: '16%' },
+  { key: 'cost_price', label: '成本价', width: '7%' },
+  { key: 'sale_price', label: '售价', width: '7%' },
+  { key: 'gross_profit_rate', label: '毛利率', width: '6%' },
+  { key: 'product_status', label: '状态', width: '6%' },
+  { key: 'actions', label: '操作', width: '12%' },
 ]
 </script>
 
@@ -156,7 +174,7 @@ const columns = [
     </div>
 
     <!-- Sortable column headers -->
-    <DataTable :columns="columns" :data="products" :loading="loading">
+    <DataTable :columns="columns" :data="products" :loading="loading" @sort-change="handleSortChange">
       <template #cell-product_name="{ row }">
         <span class="col-name">{{ row.product_name }}</span>
       </template>
@@ -179,8 +197,10 @@ const columns = [
         <StatusBadge :status="value" />
       </template>
       <template #cell-actions="{ row }">
-        <button class="btn small" @click="openEdit(row)">编辑</button>
-        <button class="btn small danger" style="margin-left:8px;" @click="remove(row)">删除</button>
+        <div class="actions-cell">
+          <button class="btn small" @click="openEdit(row)">编辑</button>
+          <button class="btn small danger" @click="remove(row)">删除</button>
+        </div>
       </template>
     </DataTable>
 
@@ -223,10 +243,18 @@ const columns = [
           </select>
         </div>
         <div class="form-group">
+          <label class="form-checkbox-label">
+            <input v-model="form.is_new" type="checkbox" />
+            <span>标记为新品（用于冷启动评估）</span>
+          </label>
+          <span v-if="form.is_new" style="color:var(--vermillion);font-size:12px;margin-left:8px;">保存后状态将自动设为"待评估"</span>
+        </div>
+        <div class="form-group">
           <label class="form-label">状态</label>
-          <select v-model="form.product_status" class="form-select">
+          <select v-model="form.product_status" class="form-select" :disabled="form.is_new">
             <option value="在售">在售</option>
             <option value="下架">下架</option>
+            <option value="待评估">待评估</option>
           </select>
         </div>
         <div class="form-group">
@@ -252,5 +280,24 @@ const columns = [
 .col-num {
   font-family: var(--font-mono);
   font-size: 13px;
+}
+.actions-cell {
+  display: flex;
+  gap: 8px;
+  white-space: nowrap;
+}
+.form-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--ink-default);
+}
+.form-checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--vermillion);
 }
 </style>

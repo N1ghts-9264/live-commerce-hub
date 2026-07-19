@@ -12,6 +12,9 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = 20
 const loading = ref(false)
+const search = ref('')
+const sortBy = ref('')
+const sortDir = ref<'asc' | 'desc'>('asc')
 
 // Generate modal
 const showGenerate = ref(false)
@@ -77,10 +80,22 @@ const filteredProducts = computed(() => {
   return list
 })
 
+function doSearch() {
+  page.value = 1
+  load()
+}
+
+function handleSortChange(state: { key: string; direction: string } | null) {
+  if (!state) return
+  sortBy.value = state.key
+  sortDir.value = state.direction as 'asc' | 'desc'
+  load()
+}
+
 async function load() {
   loading.value = true
   try {
-    const { data } = await scriptsAPI.list({ page: page.value, pageSize })
+    const { data } = await scriptsAPI.list({ page: page.value, pageSize, search: search.value, sortBy: sortBy.value, sortDir: sortDir.value })
     scripts.value = data.data
     total.value = data.total
   } finally { loading.value = false }
@@ -145,13 +160,13 @@ function changePage(p: number) { page.value = p; load() }
 onMounted(() => { load(); loadProducts() })
 
 const columns = [
-  { key: 'script_title', label: '脚本标题' },
-  { key: 'product_name', label: '商品' },
-  { key: 'script_type', label: '类型' },
-  { key: 'tags', label: '标签' },
-  { key: 'conversion_rate', label: '转化率' },
-  { key: 'recommendation_level', label: '推荐' },
-  { key: 'actions', label: '操作' },
+  { key: 'script_title', label: '脚本标题', width: '30%' },
+  { key: 'product_name', label: '商品', width: '24%' },
+  { key: 'script_type', label: '类型', width: '6%' },
+  { key: 'tags', label: '标签', width: '10%' },
+  { key: 'conversion_rate', label: '转化率', width: '6%' },
+  { key: 'recommendation_level', label: '推荐', width: '5%' },
+  { key: 'actions', label: '操作', width: '19%' },
 ]
 </script>
 
@@ -159,17 +174,20 @@ const columns = [
   <PageHeader title="脚本管理" subtitle="AI 生成直播带货逐字稿" />
   <div class="page-body">
     <div class="toolbar">
+      <input v-model="search" class="input" placeholder="搜索商品名称..." @keyup.enter="doSearch()" style="width:200px;" />
+      <button class="btn" @click="doSearch()">搜索</button>
       <button class="btn primary" @click="openGenerate">+ AI 生成脚本</button>
       <button class="btn" @click="load()">刷新</button>
     </div>
 
-    <DataTable :columns="columns" :data="scripts" :loading="loading">
+    <DataTable :columns="columns" :data="scripts" :loading="loading" @sort-change="handleSortChange">
       <template #cell-script_title="{ value }">
         <span class="script-title-cell">{{ value }}</span>
       </template>
       <template #cell-conversion_rate="{ value }">{{ value ? value + '%' : '-' }}</template>
       <template #cell-recommendation_level="{ value }">
-        <span :class="value === '高' ? 'level-S' : value === '中' ? 'level-A' : 'level-C'">{{ value || '-' }}</span>
+        <span v-if="value" class="rec-badge" :class="value === '高' ? 'rec-high' : value === '中' ? 'rec-mid' : 'rec-low'">{{ value }}</span>
+        <span v-else class="rec-none">-</span>
       </template>
       <template #cell-actions="{ row }">
         <button class="btn small" @click="openEdit(row)">查看/编辑</button>
@@ -307,6 +325,22 @@ const columns = [
 .script-title-cell {
   font-weight: 600;
 }
+
+/* Recommendation badges */
+.rec-badge {
+  display: inline-block;
+  padding: 1px 10px;
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+.rec-high { background: var(--vermillion); color: #fff; }
+.rec-mid  { background: var(--ink); color: var(--paper); }
+.rec-low  { background: var(--ink-soft); color: var(--paper); }
+.rec-none { color: var(--ink-soft); }
 
 /* Progress bar */
 .progress-wrap {

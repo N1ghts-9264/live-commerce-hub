@@ -15,7 +15,7 @@ const EMPLOYEES = [
   { employee_id: 'EMP002', employee_name: '李运营', department: '运营部', position: '运营主管', role_id: 'ROLE002' },
   { employee_id: 'EMP003', employee_name: '王采购', department: '采购部', position: '采购专员', role_id: 'ROLE003' },
   { employee_id: 'EMP004', employee_name: '赵仓储', department: '仓储部', position: '仓储主管', role_id: 'ROLE004' },
-  { employee_id: 'EMP005', employee_name: '陈主播', department: '直播部', position: '主播', role_id: 'ROLE005' },
+  { employee_id: 'EMP005', employee_name: '王凯乐', department: '直播部', position: '主播', role_id: 'ROLE005', anchor_id: 'A001' },
   { employee_id: 'EMP006', employee_name: '刘系统', department: '技术部', position: '系统管理员', role_id: 'ROLE006' },
 ];
 
@@ -41,7 +41,7 @@ const PERMISSIONS = [
 }));
 
 const ANCHORS = [
-  ['A001', '林夏', '女', '抖音', '美妆', 'S', 5800000],
+  ['A001', '王凯乐', '女', '抖音', '美妆', 'S', 5800000],
   ['A002', '周野', '男', '抖音', '数码', 'A', 3900000],
   ['A003', '赵琪', '女', '快手', '女装', 'A', 3200000],
   ['A004', '沈航', '男', '淘宝直播', '运动户外', 'B', 1800000],
@@ -171,20 +171,28 @@ export function buildAcceptancePreview() {
   });
 
   const productPerformances = products.flatMap((product, productIndex) => {
-    const trendFactor = (productIndex % 5) - 2;
-    return Array.from({ length: 5 }, (_, perfIndex) => {
-      const session = liveSessions[(productIndex * 5 + perfIndex * 7) % 100];
-      const recentLift = perfIndex >= 2 ? trendFactor * 9 : -trendFactor * 4;
-      const sales = Math.max(8, 60 + (productIndex % 18) * 5 + recentLift);
-      const conversion = Math.max(0.8, 2.6 + (productIndex % 8) * 0.28 + recentLift / 30);
-      const heat = Math.max(10, 45 + (productIndex % 12) * 5 + recentLift * 1.6);
+    const trendFactor = (productIndex % 7) - 3;
+    const sessionIndexes = [
+      productIndex % 30,
+      30 + (productIndex % 26),
+      60 + (productIndex % 18),
+      78 + (productIndex % 14),
+      90 + (productIndex % 6),
+    ];
+    return sessionIndexes.map((sessionIndex, perfIndex) => {
+      const session = liveSessions[sessionIndex];
+      const periodLift = perfIndex >= 2 ? trendFactor * 10 : -trendFactor * 6;
+      const volatility = ((productIndex + perfIndex * 3) % 9) - 4;
+      const sales = Math.max(8, 58 + (productIndex % 18) * 5 + periodLift + volatility * 2);
+      const conversion = Math.max(0.8, 2.4 + (productIndex % 8) * 0.28 + periodLift / 32 + volatility * 0.05);
+      const heat = Math.max(10, 42 + (productIndex % 12) * 5 + periodLift * 1.7 + volatility * 2.4);
       return {
         performance_id: id('PP', productIndex * 5 + perfIndex + 1),
         product_id: product.product_id,
         live_id: session.live_id,
-        click_rate: pct(5 + (productIndex % 10) * 0.8),
+        click_rate: pct(5 + (productIndex % 10) * 0.8 + volatility * 0.08),
         conversion_rate: pct(conversion),
-        refund_rate: pct(1.2 + (productIndex % 6) * 0.55),
+        refund_rate: pct(1.2 + (productIndex % 6) * 0.55 + Math.max(0, -trendFactor) * 0.08),
         interaction_heat: pct(heat),
         sales_volume: Math.round(sales),
         gmv: money(sales * Number(product.sale_price)),
@@ -320,15 +328,41 @@ export function buildAcceptancePreview() {
     error_message: index % 17 === 0 ? '平台限流，已进入重试队列' : null,
   }));
 
-  const operationReports = Array.from({ length: 12 }, (_, index) => ({
-    report_id: id('RPT', index + 1),
-    report_type: ['周报', '月报', '选品专项', '售后专项'][index % 4],
-    report_title: `直播电商运营验收报告${pad(index + 1, 2)}`,
-    report_content: '本报告汇总平台订单、互动、库存、售后和商品表现数据，用于管理层复盘与选品决策。',
-    creator_id: EMPLOYEES[index % EMPLOYEES.length].employee_id,
-    create_time: day(48 + index),
-    statistical_period: '2026年5月',
-  }));
+  const reportTemplates = [
+    {
+      type: '周报',
+      focus: '本周直播场次完成稳定，GMV 与订单量保持增长，重点场次的互动热度高于普通场次。',
+      action: '下周优先复用高转化主播与脚本组合，并检查主推商品库存水位。',
+    },
+    {
+      type: '月报',
+      focus: '月度经营核心指标覆盖 GMV、订单、转化率、库存预警和主播绩效，适合管理层做资源复盘。',
+      action: '将低库存高销量商品纳入采购建议，同时保留售后风险商品的降权观察。',
+    },
+    {
+      type: '选品专项',
+      focus: '选品评分综合转化、盈利、热度、趋势和售后质量，新品通过相似品和品类趋势进入冷启动评估。',
+      action: '对高分在售商品加大排期，对待评估新品安排小流量试播并追踪早期信号。',
+    },
+    {
+      type: '售后专项',
+      focus: '售后工单按退款、退货、换货、投诉分级处理，高等级投诉需要优先闭环。',
+      action: '把退款原因和投诉等级回流到商品质量、脚本话术和供应商履约评估。',
+    },
+  ];
+
+  const operationReports = Array.from({ length: 12 }, (_, index) => {
+    const template = reportTemplates[index % reportTemplates.length];
+    return {
+      report_id: id('RPT', index + 1),
+      report_type: template.type,
+      report_title: `直播电商运营验收报告${pad(index + 1, 2)}`,
+      report_content: `一、核心结论\n${template.focus}\n二、数据依据\n报告汇总平台订单、直播互动、库存、采购、售后和商品表现数据，统计周期为2026年5月。\n三、异常与风险\n需要重点关注库存预警SKU、售后投诉等级较高的订单，以及趋势分下降的商品。\n四、行动建议\n${template.action}`,
+      creator_id: EMPLOYEES[index % EMPLOYEES.length].employee_id,
+      create_time: day(48 + index),
+      statistical_period: '2026年5月',
+    };
+  });
 
   const kpiIndicators = [
     ['KPI001', 'GMV增长率', '财务', 15, '月度', '管理层'],
@@ -377,30 +411,63 @@ async function insertBatches(knex: Knex, table: string, rows: any[], batchSize =
 
 export async function seedAcceptanceData(knex: Knex) {
   const data = buildAcceptancePreview();
+  // FK-safe delete order: children before parents; handle missing tables gracefully
   const clearOrder = [
+    // Migration 003 tables (may not exist)
     'LivePlanItem', 'LivePlan', 'AnchorProductFit',
+    // Migration 002 tables (may not exist)
     'LiveSessionMetrics', 'ProductReview', 'LiveSessionReview',
+    // Leaf tables (no incoming FKs from other business tables)
     'UserBehaviorStat', 'InterfaceLog', 'OperationReport', 'KPIIndicator',
-    'PurchaseSuggestion', 'ProductPerformance', 'AnchorPerformance', 'AfterSale',
-    'InteractionLog', '[Order]', 'Script', 'PurchaseOrder', 'Inventory', 'SKU',
-    'Product', 'LiveSession', 'Supplier', 'EmployeeRole', 'RolePermission',
+    'PurchaseSuggestion',
+    // Children of LiveSession + Product + [Order]
+    'ProductPerformance', 'AnchorPerformance',
+    'AfterSale',        // → [Order]
+    'InteractionLog',   // → LiveSession
+    '[Order]',          // → LiveSession, SKU, User
+    'Script',           // → Product, LiveSession
+    'PurchaseOrder',    // → SKU, Supplier
+    'Inventory',        // → SKU
+    'SKU',              // → Product
+    'Product',          // → Supplier
+    'LiveSession',      // → Anchor
+    // Reference tables
+    'Supplier', 'EmployeeRole', 'RolePermission',
     'Anchor', 'User', 'Employee', 'Permission', 'Role',
   ];
 
   for (const table of clearOrder) {
-    await knex(table).del();
+    try {
+      await knex(table).del();
+    } catch {
+      // Table may not exist (e.g. migration 002/003 not run) — skip
+    }
   }
 
   const passwordHash = bcrypt.hashSync('123456', 10);
   await insertBatches(knex, 'Role', data.roles);
   await insertBatches(knex, 'Permission', data.permissions);
-  await insertBatches(knex, 'RolePermission', data.roles.flatMap((role) => (
-    data.permissions.map((permission, index) => ({
-      relation_id: `${role.role_id}_${pad(index + 1, 2)}`,
+  // Permission matrix: 管理层(16) / 运营(16) / 采购(5) / 仓储(5) / 主播(7) / 管理员(20)
+  // Indices: 0=看板查看 1=商品管理 2=主播管理 3=选品分析 4=采购管理 5=库存管理
+  //          6=直播监控 7=脚本管理 8=数据分析 9=售后管理 10=报告查看 11=系统设置
+  //          12=直播场次管理 13=采购建议查看 14=主播绩效查看 15=商品表现查看
+  //          16=接口日志查看 17=AI脚本生成 18=AI弹幕分析 19=数字顾问报告
+  const ROLE_PERM_MAP: Record<string, number[]> = {
+    ROLE001: [0,1,2,3,6,7,8,9,10,12,13,14,15,17,18,19],                           // 管理层 — 16
+    ROLE002: [0,1,2,3,6,7,8,9,10,12,13,14,15,17,18,19],                           // 运营人员 — 16
+    ROLE003: [0,4,10,13,15],                                                       // 采购人员 — 5
+    ROLE004: [0,5,10,13,15],                                                       // 仓储人员 — 5
+    ROLE005: [0,6,7,8,14,17,18],                                                  // 主播 — 7 (数据分析替代报告查看)
+    ROLE006: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],                 // 系统管理员 — 20
+  };
+  await insertBatches(knex, 'RolePermission', data.roles.flatMap((role) => {
+    const indices = ROLE_PERM_MAP[role.role_id];
+    return indices.map((idx) => ({
+      relation_id: `${role.role_id}_${pad(idx + 1, 2)}`,
       role_id: role.role_id,
-      permission_id: permission.permission_id,
-    }))
-  )));
+      permission_id: data.permissions[idx].permission_id,
+    }));
+  }));
   await insertBatches(knex, 'Employee', data.employees.map((employee, index) => ({
     employee_id: employee.employee_id,
     employee_name: employee.employee_name,
@@ -411,6 +478,7 @@ export async function seedAcceptanceData(knex: Knex) {
     status: '在职',
     join_date: '2024-01-01',
     password_hash: passwordHash,
+    ...(employee.anchor_id ? { anchor_id: employee.anchor_id } : {}),
   })));
   await insertBatches(knex, 'EmployeeRole', data.employees.map((employee, index) => ({
     relation_id: id('ER', index + 1),

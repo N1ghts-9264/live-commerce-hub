@@ -1,10 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuid } from 'uuid';
 import knex from '../db/knex';
-import { authenticate } from '../middleware/auth';
+import { authenticate, authorize, getAnchorFilter, ROLES } from '../middleware/auth';
 
 const router = Router();
 router.use(authenticate);
+router.use(authorize(ROLES.MANAGEMENT, ROLES.OPERATIONS, ROLES.ADMIN));
 
 // GET /api/anchors
 router.get('/', async (req: Request, res: Response) => {
@@ -14,16 +15,32 @@ router.get('/', async (req: Request, res: Response) => {
     const search = req.query.search as string || '';
     const level = req.query.level as string || '';
     const status = req.query.status as string || '';
+    const scope = getAnchorFilter(req);
 
     let query = knex('Anchor');
 
+    if (scope.anchor_id) query = query.where('anchor_id', scope.anchor_id);
     if (search) query = query.where('anchor_name', 'like', `%${search}%`);
     if (level) query = query.where('anchor_level', level);
     if (status) query = query.where('status', status);
 
+    const sortBy = req.query.sortBy as string || '';
+    const sortDir = req.query.sortDir as string || 'asc';
+    const allowedSorts: Record<string, string> = {
+      anchor_name: 'anchor_name',
+      gender: 'gender',
+      join_date: 'join_date',
+      account_platform: 'account_platform',
+      fan_count: 'fan_count',
+      specialization: 'specialization',
+      anchor_level: 'anchor_level',
+      status: 'status',
+    };
     const [{ count: total }] = await query.clone().clearSelect().count('* as count');
+    const orderCol = allowedSorts[sortBy] || 'fan_count';
+    const direction = sortDir === 'desc' ? 'desc' : 'asc';
     const data = await query
-      .orderBy('fan_count', 'desc')
+      .orderBy(orderCol, direction)
       .offset((page - 1) * pageSize)
       .limit(pageSize);
 

@@ -11,8 +11,9 @@ const props = defineProps<{
   rowClass?: string | ((row: T) => string)
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   rowClick: [row: T]
+  sortChange: [state: SortState | null]
 }>()
 
 defineSlots<{
@@ -22,6 +23,8 @@ defineSlots<{
 const sortState = ref<SortState | null>(null)
 
 const sortedData = computed(() => sortRows(props.data, sortState.value))
+
+const useFixedLayout = computed(() => props.columns.some(c => c.width))
 
 function isSortable(col: Column) {
   return col.sortable !== false && col.key !== 'actions'
@@ -38,9 +41,11 @@ function toggleSort(col: Column) {
   if (sortState.value?.key === col.key) {
     const direction: SortDirection = sortState.value.direction === 'desc' ? 'asc' : 'desc'
     sortState.value = { key: col.key, direction }
+    emit('sortChange', sortState.value)
     return
   }
   sortState.value = { key: col.key, direction: 'desc' }
+  emit('sortChange', sortState.value)
 }
 
 function getCellValue(row: T, key: string) {
@@ -55,7 +60,7 @@ function getRowClass(row: T) {
 
 <template>
   <div class="table-wrap">
-    <table>
+    <table :class="{ 'table-fixed': useFixedLayout }">
       <thead>
         <tr>
           <th
@@ -104,6 +109,25 @@ function getRowClass(row: T) {
 </template>
 
 <style scoped>
+table {
+  width: 100%;
+}
+
+/* Only use fixed layout when column widths are explicitly set */
+.table-fixed {
+  table-layout: fixed;
+}
+
+/* Allow text wrapping in cells — overrides global white-space:nowrap */
+.table-fixed th,
+.table-fixed td,
+th, td {
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  vertical-align: middle;
+}
+
 .sort-header {
   all: unset;
   display: inline-flex;
@@ -111,6 +135,7 @@ function getRowClass(row: T) {
   gap: 6px;
   cursor: pointer;
   color: inherit;
+  white-space: nowrap;
 }
 
 th.sortable:hover {
